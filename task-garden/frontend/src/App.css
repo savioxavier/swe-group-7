@@ -1,0 +1,21 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+body {
+  background-color: #111827;
+  color: #f3f4f6;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+}
+
+/* Fallback styles if TailwindCSS doesn't load */
+.dark-theme {
+  background: linear-gradient(135deg, #111827, #1f2937, #14532d);
+  min-height: 100vh;
+  color: #f3f4f6;
+}
