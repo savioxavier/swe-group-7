@@ -11,21 +11,65 @@ A gamified productivity app that turns your tasks into a thriving virtual garden
 
 ## Development Setup
 
-### Frontend
+### Prerequisites
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+- Python 3.8+
+- Node.js 16+
 
-### Backend
+### Backend Setup
 
+1. Navigate to backend directory:
 ```bash
 cd backend
-source venv/Scripts/activate  # or venv\Scripts\activate on Windows
+```
+
+2. Create virtual environment:
+```bash
+python -m venv venv
+```
+
+3. Activate virtual environment:
+```bash
+venv\Scripts\activate
+```
+
+4. Install dependencies:
+```bash
 pip install -r requirements.txt
+```
+
+5. Set up environment variables:
+```bash
+cp .env.example .env
+# Edit .env with Supabase credentials
+```
+
+6. Start the backend server:
+```bash
 uvicorn app.main:app --reload
+```
+
+### Frontend Setup
+
+1. Navigate to frontend directory:
+```bash
+cd frontend
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Set up environment variables:
+```bash
+cp .env.example .env
+# Edit .env if needed
+```
+
+4. Start the development server:
+```bash
+npm run dev
 ```
 
 ## Team: The Growth Hackers
