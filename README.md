@@ -78,3 +78,9 @@ npm run dev
 - Backend Lead: Cesar Valentin
 - Project Manager: Weien Xu
 - Scrum Master: Fernando Amado-Pupo
+
+## Communication Tools
+
+- Kanban Board: https://trello.com/b/QcR6HNmP/taskgarden
+- Event Timeline: https://docs.google.com/spreadsheets/d/1tOB8js2qUY5uYMcYf_fCWPlvhZle_kEK4yBx3QX4nDQ/edit?gid=0#gid=0
+- 
