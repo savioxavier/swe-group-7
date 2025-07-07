@@ -82,5 +82,5 @@ npm run dev
 ## Communication Tools
 
 - Kanban Board: https://trello.com/b/QcR6HNmP/taskgarden
-- Event Timeline: https://docs.google.com/spreadsheets/d/1tOB8js2qUY5uYMcYf_fCWPlvhZle_kEK4yBx3QX4nDQ/edit?gid=0#gid=0
-- 
+- Event Timeline, Emotion Seismograph, Insights & Action: https://docs.google.com/spreadsheets/d/1tOB8js2qUY5uYMcYf_fCWPlvhZle_kEK4yBx3QX4nDQ/edit?gid=0#gid=0
+- Daily Scrum Conclusion: https://docs.google.com/spreadsheets/d/1UizHkLe0bSSx5W6KEjGq726j-W5fovsy/edit?gid=500458144#gid=500458144
