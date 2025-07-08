@@ -30,7 +30,7 @@ python -m venv venv
 
 3. Activate virtual environment:
 ```bash
-venv\Scripts\activate
+source venv\Scripts\activate
 ```
 
 4. Install dependencies:
@@ -78,3 +78,7 @@ npm run dev
 - Backend Lead: Cesar Valentin
 - Project Manager: Weien Xu
 - Scrum Master: Fernando Amado-Pupo
+
+## Communication Tools
+
+- Growth Hackers Catalog: https://docs.google.com/document/d/1MyIpB0IGhxp_tIT_w1DIAZpAiOBAQuMNSoPe0142gMs/edit?tab=t.0
