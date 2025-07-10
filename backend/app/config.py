@@ -14,10 +14,5 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 try:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print("Supabase client initialized successfully")
-    
-except Exception as e:
-    print(f"Failed to initialize Supabase client: {e}")
-    print(f"Error type: {type(e)}")
-    
+except Exception:
     supabase = None
