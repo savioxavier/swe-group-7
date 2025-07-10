@@ -22,8 +22,8 @@ export default function SignUp() {
     try {
       await register({ email, password, username })
       navigate('/garden')
-    } catch (err: any) {
-      setError(err.message || 'Registration failed')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Registration failed')
     } finally {
       setLoading(false)
     }

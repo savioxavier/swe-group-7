@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { api } from '../lib/api'
-import { User, AuthResponse, RegistrationResponse, LoginData, RegisterData } from '../types'
+import { User, LoginData, RegisterData } from '../types'
 
 interface AuthContextType {
   user: User | null
@@ -13,7 +13,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export function useAuth() {
+function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider')
@@ -21,7 +21,7 @@ export function useAuth() {
   return context
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -38,31 +38,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const login = async (data: LoginData) => {
-    try {
-      const response = await api.login(data)
+    const response = await api.login(data)
+    setToken(response.access_token)
+    setUser(response.user)
+    localStorage.setItem('token', response.access_token)
+    localStorage.setItem('user', JSON.stringify(response.user))
+  }
+
+  const register = async (data: RegisterData) => {
+    const response = await api.register(data)
+    
+    if ('access_token' in response) {
       setToken(response.access_token)
       setUser(response.user)
       localStorage.setItem('token', response.access_token)
       localStorage.setItem('user', JSON.stringify(response.user))
-    } catch (error) {
-      throw error
-    }
-  }
-
-  const register = async (data: RegisterData) => {
-    try {
-      const response = await api.register(data)
-      
-      if ('access_token' in response) {
-        setToken(response.access_token)
-        setUser(response.user)
-        localStorage.setItem('token', response.access_token)
-        localStorage.setItem('user', JSON.stringify(response.user))
-      } else {
-        throw new Error(response.message)
-      }
-    } catch (error) {
-      throw error
+    } else {
+      throw new Error(response.message)
     }
   }
 
@@ -88,3 +80,5 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     </AuthContext.Provider>
   )
 }
+
+export { useAuth, AuthProvider }
