@@ -7,7 +7,11 @@ import { api } from '../lib/api'
 export default function Garden() {
   const { user, logout } = useAuth()
   const [selectedPlot, setSelectedPlot] = useState<number | null>(null)
-  const [userProgress, setUserProgress] = useState<any>(null)
+  const [userProgress, setUserProgress] = useState<{
+    current_streak: number;
+    level: number;
+    total_experience: number;
+  } | null>(null)
 
   const gardenPlots = [
     { id: 1, x: 2, y: 1, plant: { name: 'Exercise Oak', growth: 75, type: 'exercise' }, hasPlant: true },
@@ -41,7 +45,7 @@ export default function Garden() {
     try {
       const response = await api.get('/plants/progress/me')
       setUserProgress(response)
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to fetch user progress:', error)
     }
   }

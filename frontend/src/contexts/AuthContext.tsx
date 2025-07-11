@@ -13,14 +13,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-function useAuth() {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
-  return context
-}
-
 function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
@@ -53,7 +45,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const validateToken = async (token: string): Promise<void> => {
     try {
       await api.getCurrentUser(token)
-    } catch (error) {
+    } catch {
       throw new Error('Invalid token')
     }
   }
@@ -100,6 +92,14 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       {children}
     </AuthContext.Provider>
   )
+}
+
+function useAuth() {
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider')
+  }
+  return context
 }
 
 export { useAuth, AuthProvider }

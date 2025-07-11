@@ -78,7 +78,7 @@ export const api = {
     })
   },
 
-  async post<T>(endpoint: string, data?: any): Promise<T> {
+  async post<T>(endpoint: string, data?: unknown): Promise<T> {
     return apiRequest<T>(`/api${endpoint}`, {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -86,7 +86,7 @@ export const api = {
     })
   },
 
-  async put<T>(endpoint: string, data?: any): Promise<T> {
+  async put<T>(endpoint: string, data?: unknown): Promise<T> {
     return apiRequest<T>(`/api${endpoint}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
