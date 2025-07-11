@@ -1,8 +1,9 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 from ..config import supabase
-from ..models import TaskCreate, TaskResponse, TaskStatus
+from ..models import TaskCreate, TaskUpdate, TaskResponse, TaskStatus
+from .plant_service import PlantService
 
 class TaskService:
     @staticmethod
@@ -27,7 +28,7 @@ class TaskService:
         return tasks
 
     @staticmethod
-    async def create_task(task: TaskCreate, user_id: str) -> TaskResponse:
+    async def create_task(task: TaskCreate, user_id: str, plant_id: Optional[str] = None) -> TaskResponse:
         task_data = {
             "title": task.title,
             "description": task.description,
@@ -35,6 +36,7 @@ class TaskService:
             "status": TaskStatus.PENDING.value,
             "due_date": task.due_date.isoformat() if task.due_date else None,
             "user_id": user_id,
+            "plant_id": plant_id,
             "created_at": datetime.now().isoformat()
         }
         
@@ -70,6 +72,14 @@ class TaskService:
             raise Exception("Task not found")
         
         updated_task = response.data[0]
+        
+        plant_id = updated_task.get("plant_id")
+        if plant_id:
+            try:
+                await PlantService.award_task_completion_experience(user_id, plant_id)
+            except Exception:
+                pass
+        
         return TaskResponse(
             id=updated_task["id"],
             title=updated_task["title"],
@@ -82,3 +92,60 @@ class TaskService:
             user_id=updated_task["user_id"],
             plant_id=updated_task.get("plant_id")
         )
+    
+    @staticmethod
+    async def update_task(task_id: str, user_id: str, task_update: TaskUpdate) -> TaskResponse:
+        update_data = {}
+        
+        if task_update.title is not None:
+            update_data["title"] = task_update.title
+        if task_update.description is not None:
+            update_data["description"] = task_update.description
+        if task_update.category is not None:
+            update_data["category"] = task_update.category.value
+        if task_update.due_date is not None:
+            update_data["due_date"] = task_update.due_date.isoformat()
+        if task_update.status is not None:
+            update_data["status"] = task_update.status.value
+            if task_update.status == TaskStatus.COMPLETED:
+                update_data["completed_at"] = datetime.now().isoformat()
+        
+        if not update_data:
+            raise Exception("No data to update")
+        
+        response = supabase.table("tasks").update(update_data).eq("id", task_id).eq("user_id", user_id).execute()
+        
+        if not response.data:
+            raise Exception("Task not found")
+        
+        updated_task = response.data[0]
+        
+        if task_update.status == TaskStatus.COMPLETED:
+            plant_id = updated_task.get("plant_id")
+            if plant_id:
+                try:
+                    await PlantService.award_task_completion_experience(user_id, plant_id)
+                except Exception:
+                    pass
+        
+        return TaskResponse(
+            id=updated_task["id"],
+            title=updated_task["title"],
+            description=updated_task.get("description"),
+            category=updated_task["category"],
+            status=updated_task["status"],
+            due_date=datetime.fromisoformat(updated_task["due_date"]) if updated_task.get("due_date") else None,
+            completed_at=datetime.fromisoformat(updated_task["completed_at"]) if updated_task.get("completed_at") else None,
+            created_at=datetime.fromisoformat(updated_task["created_at"]),
+            user_id=updated_task["user_id"],
+            plant_id=updated_task.get("plant_id")
+        )
+    
+    @staticmethod
+    async def delete_task(task_id: str, user_id: str) -> bool:
+        response = supabase.table("tasks").delete().eq("id", task_id).eq("user_id", user_id).execute()
+        
+        if not response.data:
+            raise Exception("Task not found")
+        
+        return True

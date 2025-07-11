@@ -1,5 +1,6 @@
 from .user import UserRegister, UserLogin, UserResponse, Token, RegistrationResponse
 from .task import TaskCategory, TaskStatus, TaskCreate, TaskUpdate, TaskResponse
+from .plant import PlantType, CareType, PlantCreate, PlantUpdate, PlantResponse, PlantCareCreate, PlantCareResponse, UserProgressResponse
 
 __all__ = [
     "UserRegister",
@@ -11,5 +12,13 @@ __all__ = [
     "TaskStatus", 
     "TaskCreate",
     "TaskUpdate",
-    "TaskResponse"
+    "TaskResponse",
+    "PlantType",
+    "CareType",
+    "PlantCreate",
+    "PlantUpdate",
+    "PlantResponse",
+    "PlantCareCreate",
+    "PlantCareResponse",
+    "UserProgressResponse"
 ]
