@@ -31,11 +31,32 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     const storedUser = localStorage.getItem('user')
     
     if (storedToken && storedUser) {
-      setToken(storedToken)
-      setUser(JSON.parse(storedUser))
+      // Validate token by making a test request
+      validateToken(storedToken)
+        .then(() => {
+          setToken(storedToken)
+          setUser(JSON.parse(storedUser))
+        })
+        .catch(() => {
+          // Token is invalid, clear storage
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+        })
+        .finally(() => {
+          setLoading(false)
+        })
+    } else {
+      setLoading(false)
     }
-    setLoading(false)
   }, [])
+
+  const validateToken = async (token: string): Promise<void> => {
+    try {
+      await api.getCurrentUser(token)
+    } catch (error) {
+      throw new Error('Invalid token')
+    }
+  }
 
   const login = async (data: LoginData) => {
     const response = await api.login(data)

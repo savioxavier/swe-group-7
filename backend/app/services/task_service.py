@@ -80,6 +80,11 @@ class TaskService:
             except Exception:
                 pass
         
+        try:
+            await PlantService.update_user_streak(user_id)
+        except Exception:
+            pass
+        
         return TaskResponse(
             id=updated_task["id"],
             title=updated_task["title"],
@@ -127,6 +132,11 @@ class TaskService:
                     await PlantService.award_task_completion_experience(user_id, plant_id)
                 except Exception:
                     pass
+            
+            try:
+                await PlantService.update_user_streak(user_id)
+            except Exception:
+                pass
         
         return TaskResponse(
             id=updated_task["id"],

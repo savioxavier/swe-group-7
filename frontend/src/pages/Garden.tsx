@@ -1,11 +1,13 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Leaf, Plus, Settings, LogOut, User } from 'lucide-react'
+import { Leaf, Plus, Settings, LogOut, User, Zap } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { api } from '../lib/api'
 
 export default function Garden() {
   const { user, logout } = useAuth()
   const [selectedPlot, setSelectedPlot] = useState<number | null>(null)
+  const [userProgress, setUserProgress] = useState<any>(null)
 
   const gardenPlots = [
     { id: 1, x: 2, y: 1, plant: { name: 'Exercise Oak', growth: 75, type: 'exercise' }, hasPlant: true },
@@ -34,6 +36,19 @@ export default function Garden() {
   const handleLogout = () => {
     logout()
   }
+
+  const fetchUserProgress = async () => {
+    try {
+      const response = await api.get('/plants/progress/me')
+      setUserProgress(response)
+    } catch (error: any) {
+      console.error('Failed to fetch user progress:', error)
+    }
+  }
+
+  useEffect(() => {
+    fetchUserProgress()
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-800 via-green-700 to-green-600">
@@ -83,6 +98,24 @@ export default function Garden() {
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-white mb-2">Your Garden</h2>
               <p className="text-green-100">Tap on plots to plant or tend to your plants</p>
+              
+              {userProgress && (
+                <div className="mt-4 flex justify-center space-x-6 text-white">
+                  <div className="bg-white/10 px-4 py-2 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <Zap className="w-4 h-4 text-yellow-400" />
+                      <span>Streak: {userProgress.current_streak} days</span>
+                    </div>
+                  </div>
+                  <div className="bg-white/10 px-4 py-2 rounded-lg">
+                    <span>Level: {userProgress.level}</span>
+                  </div>
+                  <div className="bg-white/10 px-4 py-2 rounded-lg">
+                    <span>EXP: {userProgress.total_experience}</span>
+                  </div>
+                </div>
+              )}
+
             </div>
 
             <div 

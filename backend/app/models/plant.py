@@ -15,6 +15,13 @@ class CareType(str, Enum):
     FERTILIZE = "fertilize"
     TASK_COMPLETE = "task_complete"
 
+class DecayStatus(str, Enum):
+    HEALTHY = "healthy"
+    SLIGHTLY_WILTED = "slightly_wilted"
+    WILTED = "wilted"
+    SEVERELY_WILTED = "severely_wilted"
+    DEAD = "dead"
+
 class PlantCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     plant_type: PlantType
@@ -37,6 +44,8 @@ class PlantResponse(BaseModel):
     position_x: int
     position_y: int
     is_active: bool
+    decay_status: Optional[DecayStatus] = DecayStatus.HEALTHY
+    days_without_care: Optional[int] = 0
     created_at: datetime
     updated_at: datetime
 

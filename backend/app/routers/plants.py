@@ -61,3 +61,4 @@ async def care_for_plant(
 async def get_user_progress(credentials = Depends(security)):
     user_id = await get_current_user_id(credentials)
     return await PlantService.get_user_progress(user_id)
+
