@@ -9,7 +9,7 @@ SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Build the full path to the client secret JSON file
-secret_file = 'client_secret_438274542668-dkk5sroh27mh608p6p9esdc8kfihh5e4.apps.googleusercontent.com.json'
+secret_file = 'client_secret.json'
 secret_path = os.path.join(BASE_DIR, 'Secrets', secret_file)
 
 # Start OAuth flow
