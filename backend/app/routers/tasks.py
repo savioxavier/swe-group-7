@@ -18,7 +18,7 @@ async def get_tasks(credentials = Depends(security)):
         raise HTTPException(status_code=500, detail="Failed to fetch tasks")
 
 @router.post("/", response_model=TaskResponse)
-async def create_task(task: TaskCreate, plant_id: Optional[str] = None, credentials = Depends(security)):
+async def create_task(task: TaskCreate, credentials = Depends(security), plant_id: Optional[str] = None):
     try:
         user_id = await get_current_user_id(credentials)
         return await TaskService.create_task(task, user_id, plant_id)

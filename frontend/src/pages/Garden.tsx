@@ -12,6 +12,15 @@ export default function Garden() {
     level: number;
     total_experience: number;
   } | null>(null)
+  
+  const [testResponse, setTestResponse] = useState<string>('')
+  const [tasks, setTasks] = useState<any[]>([])
+  const [testHours, setTestHours] = useState<number>(1)
+  const [taskTitle, setTaskTitle] = useState<string>('')
+  const [taskDescription, setTaskDescription] = useState<string>('')
+  const [taskCategory, setTaskCategory] = useState<string>('study')
+  const [plantName, setPlantName] = useState<string>('')  
+  const [plantType, setPlantType] = useState<string>('study')
 
   const gardenPlots = [
     { id: 1, x: 2, y: 1, plant: { name: 'Exercise Oak', growth: 75, type: 'exercise' }, hasPlant: true },
@@ -47,6 +56,125 @@ export default function Garden() {
       setUserProgress(response)
     } catch (error) {
       console.error('Failed to fetch user progress:', error)
+    }
+  }
+
+  const testCreateTask = async () => {
+    if (!taskTitle.trim()) {
+      setTestResponse('Please enter a task title')
+      return
+    }
+    try {
+      const newTask = {
+        title: taskTitle,
+        description: taskDescription || null,
+        category: taskCategory,
+        due_date: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      }
+      
+      const response = await api.post('/tasks/', newTask)
+      setTestResponse(`Created: "${response.title}" (${response.category})`)
+      setTaskTitle('')
+      setTaskDescription('')
+      fetchTasks()
+    } catch (error) {
+      setTestResponse(`Error creating task: ${error}`)
+    }
+  }
+
+  const testLogTime = async () => {
+    if (tasks.length === 0) {
+      setTestResponse('No tasks available. Create a task first!')
+      return
+    }
+    try {
+      const task = tasks[0]
+      const timeLog = { hours: parseFloat(testHours.toString()) }
+      const response = await api.post(`/tasks/${task.id}/log-time`, timeLog)
+      setTestResponse(`Logged ${testHours}h on "${task.title}" - gained ${response.xp_gained} XP`)
+      fetchUserProgressNew()
+    } catch (error) {
+      setTestResponse(`Error logging time: ${error}`)
+    }
+  }
+
+  const fetchTasks = async () => {
+    try {
+      const response = await api.get('/tasks/')
+      setTasks(response)
+      const taskList = response.map(t => `${t.title} (${t.category}${t.status === 'completed' ? ' - completed' : ''})`).join('\n')
+      setTestResponse(`Found ${response.length} tasks:\n${taskList}`)
+    } catch (error) {
+      setTestResponse(`Error fetching tasks: ${error}`)
+    }
+  }
+
+  const fetchUserProgressNew = async () => {
+    try {
+      const response = await api.get('/users/progress')
+      setTestResponse(`Level ${response.level} | ${response.total_experience} XP | ${response.current_streak} day streak\nNext level: ${response.experience_to_next_level} XP needed`)
+    } catch (error) {
+      setTestResponse(`Error fetching progress: ${error}`)
+    }
+  }
+
+  const testApplyDecay = async () => {
+    try {
+      const response = await api.post('/users/apply-daily-decay', {})
+      if (response.decay_applied) {
+        setTestResponse(`Daily decay: -${response.decay_applied} XP (Level ${response.level} decay: ${response.base_decay}, Streak protection: -${response.streak_protection})`)
+      } else {
+        setTestResponse(`No decay applied - fully protected by streak`)
+      }
+      fetchUserProgressNew()
+    } catch (error) {
+      setTestResponse(`Error applying decay: ${error}`)
+    }
+  }
+
+  const testCreatePlant = async () => {
+    if (!plantName.trim()) {
+      setTestResponse('Please enter a plant name')
+      return
+    }
+    try {
+      const newPlant = {
+        name: plantName,
+        plant_type: plantType,
+        position_x: Math.floor(Math.random() * 11),
+        position_y: Math.floor(Math.random() * 11)
+      }
+      const response = await api.post('/plants/', newPlant)
+      setTestResponse(`Planted "${response.name}" (${response.plant_type}) at (${response.position_x}, ${response.position_y})`)
+      setPlantName('')
+    } catch (error) {
+      setTestResponse(`Error creating plant: ${error}`)
+    }
+  }
+
+  const testGetPlants = async () => {
+    try {
+      const response = await api.get('/plants/')
+      const plantList = response.map(p => `${p.name} (${p.plant_type}) - Level ${p.growth_level} | ${p.experience_points} XP`).join('\n')
+      setTestResponse(`Garden has ${response.length} plants:\n${plantList}`)
+    } catch (error) {
+      setTestResponse(`Error fetching plants: ${error}`)
+    }
+  }
+
+  const testCompleteTask = async () => {
+    if (tasks.length === 0) {
+      setTestResponse('No tasks available. Create a task first!')
+      return
+    }
+    try {
+      const task = tasks[0]
+      const response = await api.put(`/tasks/${task.id}/complete`, {})
+      setTestResponse(`Completed "${response.title}" - Streak updated and plant XP gained`)
+      fetchTasks()
+      fetchUserProgressNew()
+    } catch (error) {
+      setTestResponse(`Error completing task: ${error}`)
     }
   }
 
@@ -244,6 +372,160 @@ export default function Garden() {
                 )}
               </motion.div>
             )}
+
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-8 bg-red-900/20 backdrop-blur-md rounded-xl p-6 border border-red-500/30"
+            >
+              <h3 className="text-xl font-bold text-red-300 mb-4 text-center">Backend Testing Panel</h3>
+              
+              <div className="mb-6">
+                <h4 className="text-lg text-white mb-3">Task Management</h4>
+                
+                <div className="mb-4 p-4 bg-white/5 rounded-lg">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <input 
+                      type="text" 
+                      placeholder="Task title..." 
+                      value={taskTitle}
+                      onChange={(e) => setTaskTitle(e.target.value)}
+                      className="px-3 py-2 rounded bg-white/20 text-white text-sm placeholder-gray-300"
+                    />
+                    <select 
+                      value={taskCategory} 
+                      onChange={(e) => setTaskCategory(e.target.value)}
+                      className="px-3 py-2 rounded bg-white/20 text-white text-sm"
+                      style={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                        color: 'white'
+                      }}
+                    >
+                      <option value="exercise" style={{ backgroundColor: '#374151', color: 'white' }}>Exercise</option>
+                      <option value="study" style={{ backgroundColor: '#374151', color: 'white' }}>Study</option>
+                      <option value="work" style={{ backgroundColor: '#374151', color: 'white' }}>Work</option>
+                      <option value="selfcare" style={{ backgroundColor: '#374151', color: 'white' }}>Self Care</option>
+                      <option value="creative" style={{ backgroundColor: '#374151', color: 'white' }}>Creative</option>
+                    </select>
+                  </div>
+                  <input 
+                    type="text" 
+                    placeholder="Task description (optional)..." 
+                    value={taskDescription}
+                    onChange={(e) => setTaskDescription(e.target.value)}
+                    className="w-full px-3 py-2 rounded bg-white/20 text-white text-sm placeholder-gray-300 mb-3"
+                  />
+                  <button 
+                    onClick={testCreateTask}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm transition-colors"
+                  >
+                    Create Task
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <button 
+                    onClick={fetchTasks}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm transition-colors"
+                  >
+                    Get Tasks
+                  </button>
+                  <button 
+                    onClick={testCompleteTask}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm transition-colors"
+                  >
+                    Complete Task
+                  </button>
+                  <div className="flex items-center space-x-2">
+                    <input 
+                      type="number" 
+                      value={testHours} 
+                      onChange={(e) => setTestHours(Number(e.target.value))}
+                      className="w-16 px-2 py-1 rounded bg-white/20 text-white text-sm"
+                      step="0.5"
+                      min="0.1"
+                    />
+                    <button 
+                      onClick={testLogTime}
+                      className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-2 rounded text-sm transition-colors"
+                    >
+                      Log Time
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <h4 className="text-lg text-white mb-3">XP System</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  <button 
+                    onClick={fetchUserProgressNew}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded text-sm transition-colors"
+                  >
+                    Get XP Progress
+                  </button>
+                  <button 
+                    onClick={testApplyDecay}
+                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-sm transition-colors"
+                  >
+                    Apply Daily Decay
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <h4 className="text-lg text-white mb-3">Plant System</h4>
+                
+                <div className="mb-4 p-4 bg-white/5 rounded-lg">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <input 
+                      type="text" 
+                      placeholder="Plant name..." 
+                      value={plantName}
+                      onChange={(e) => setPlantName(e.target.value)}
+                      className="px-3 py-2 rounded bg-white/20 text-white text-sm placeholder-gray-300"
+                    />
+                    <select 
+                      value={plantType} 
+                      onChange={(e) => setPlantType(e.target.value)}
+                      className="px-3 py-2 rounded bg-white/20 text-white text-sm"
+                      style={{
+                        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                        color: 'white'
+                      }}
+                    >
+                      <option value="exercise" style={{ backgroundColor: '#374151', color: 'white' }}>Exercise</option>
+                      <option value="study" style={{ backgroundColor: '#374151', color: 'white' }}>Study</option>
+                      <option value="work" style={{ backgroundColor: '#374151', color: 'white' }}>Work</option>
+                      <option value="selfcare" style={{ backgroundColor: '#374151', color: 'white' }}>Self Care</option>
+                      <option value="creative" style={{ backgroundColor: '#374151', color: 'white' }}>Creative</option>
+                    </select>
+                  </div>
+                  <button 
+                    onClick={testCreatePlant}
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm transition-colors"
+                  >
+                    Create Plant
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  <button 
+                    onClick={testGetPlants}
+                    className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded text-sm transition-colors"
+                  >
+                    Get Plants
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-black/30 p-4 rounded-lg">
+                <h4 className="text-sm text-gray-300 mb-2">API Response:</h4>
+                <pre className="text-xs text-green-400 font-mono overflow-auto max-h-40">
+                  {testResponse || 'Click buttons above to test backend APIs...'}
+                </pre>
+              </div>
+            </motion.div>
           </div>
         </div>
       </div>

@@ -37,6 +37,15 @@ async function apiRequest<T>(
       throw new ApiError(response.status, 'Session expired. Please log in again.')
     }
     
+    if (response.status === 422) {
+      const errorMessage = error.detail ? 
+        (Array.isArray(error.detail) ? 
+          error.detail.map(e => `Field '${e.loc?.join('.')}': ${e.msg}`).join(', ') : 
+          error.detail) : 
+        'Validation failed'
+      throw new ApiError(response.status, errorMessage)
+    }
+    
     throw new ApiError(response.status, error.detail || 'Request failed')
   }
 
@@ -81,7 +90,10 @@ export const api = {
   async post<T>(endpoint: string, data?: unknown): Promise<T> {
     return apiRequest<T>(`/api${endpoint}`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: data ? JSON.stringify(data) : undefined,
     })
   },
@@ -89,7 +101,10 @@ export const api = {
   async put<T>(endpoint: string, data?: unknown): Promise<T> {
     return apiRequest<T>(`/api${endpoint}`, {
       method: 'PUT',
-      headers: getAuthHeaders(),
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
       body: data ? JSON.stringify(data) : undefined,
     })
   },

@@ -1,5 +1,5 @@
 from typing import Dict, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
 from ..config import supabase
 
 class XPService:
