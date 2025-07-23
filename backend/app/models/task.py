@@ -28,6 +28,19 @@ class TaskUpdate(BaseModel):
     due_date: Optional[datetime] = None
     status: Optional[TaskStatus] = None
 
+class TimeLogCreate(BaseModel):
+    hours: float
+    date: Optional[datetime] = None
+
+class TimeLogResponse(BaseModel):
+    id: str
+    task_id: str
+    user_id: str
+    hours: float
+    experience_gained: int
+    date: datetime
+    created_at: datetime
+
 class TaskResponse(BaseModel):
     id: str
     title: str
@@ -39,3 +52,6 @@ class TaskResponse(BaseModel):
     created_at: datetime
     user_id: str
     plant_id: Optional[str] = None
+    total_hours: Optional[float] = 0.0
+    total_experience: Optional[int] = 0
+    current_level: Optional[int] = 0

@@ -33,3 +33,16 @@ class RegistrationResponse(BaseModel):
     user_id: str
     email: str
     requires_confirmation: bool = True
+
+class UserProgressResponse(BaseModel):
+    user_id: str
+    total_experience: int
+    level: int
+    current_level_experience: int
+    experience_to_next_level: int
+    current_streak: int
+    longest_streak: int
+    tasks_completed: int
+    plants_grown: int
+    last_activity_date: Optional[datetime] = None
+    updated_at: datetime

@@ -7,6 +7,8 @@ import os
 
 from ..config import supabase
 from ..models import UserRegister, UserLogin, Token, UserResponse, RegistrationResponse
+from ..services.auth import get_current_user_id
+from ..services.xp_service import XPService
 
 router = APIRouter()
 security = HTTPBearer()
@@ -121,3 +123,47 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Invalid token")
     except Exception as e:
         raise HTTPException(status_code=401, detail="Authentication failed")
+
+@router.get("/progress")
+async def get_user_progress(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get user's XP progress including level, total XP, and streaks"""
+    try:
+        user_id = await get_current_user_id(credentials)
+        
+        # Get user progress from database
+        progress_result = supabase.table("user_progress").select("*").eq("user_id", user_id).execute()
+        
+        if not progress_result.data:
+            # Create initial progress record
+            initial_progress = await XPService.update_user_xp(user_id, 0)
+            return initial_progress
+        
+        progress = progress_result.data[0]
+        
+        # Calculate level breakdown
+        level, current_level_xp, xp_to_next = XPService.calculate_level_from_xp(progress["total_experience"])
+        
+        return {
+            "user_id": user_id,
+            "total_experience": progress["total_experience"],
+            "level": level,
+            "current_level_experience": current_level_xp,
+            "experience_to_next_level": xp_to_next,
+            "current_streak": progress.get("current_streak", 0),
+            "longest_streak": progress.get("longest_streak", 0),
+            "tasks_completed": progress.get("tasks_completed", 0),
+            "plants_grown": progress.get("plants_grown", 0)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get user progress: {str(e)}")
+
+@router.post("/apply-daily-decay")
+async def apply_daily_decay(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Manually apply daily XP decay (normally would be scheduled)"""
+    try:
+        user_id = await get_current_user_id(credentials)
+        result = await XPService.apply_daily_decay(user_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to apply daily decay: {str(e)}")

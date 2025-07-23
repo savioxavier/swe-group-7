@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
 
-from ..models import TaskCreate, TaskUpdate, TaskResponse
+from ..models import TaskCreate, TaskUpdate, TaskResponse, TimeLogCreate, TimeLogResponse
 from ..services.auth import get_current_user_id
 from ..services.task_service import TaskService
+from ..services.xp_service import XPService
 from ..routers.users import security
 
 router = APIRouter()
@@ -50,3 +51,42 @@ async def delete_task(task_id: str, credentials = Depends(security)):
         raise HTTPException(status_code=400, detail="Failed to delete task")
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to delete task")
+
+@router.post("/{task_id}/log-time")
+async def log_time_for_task(task_id: str, time_log: TimeLogCreate, credentials = Depends(security)):
+    """Log time spent on a task and award XP according to the formula: 1 hour = 100 XP"""
+    try:
+        user_id = await get_current_user_id(credentials)
+        
+        # Verify task belongs to user
+        task = await TaskService.get_task_by_id(task_id, user_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        result = await XPService.log_time_for_task(task_id, user_id, time_log.hours, time_log.date)
+        return {
+            "message": f"Logged {time_log.hours} hours for task",
+            "xp_gained": result["xp_gained"],
+            "time_log_id": result["time_log_id"]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to log time: {str(e)}")
+
+@router.get("/{task_id}/time-logs", response_model=List[TimeLogResponse])
+async def get_task_time_logs(task_id: str, credentials = Depends(security)):
+    """Get all time logs for a specific task"""
+    try:
+        user_id = await get_current_user_id(credentials)
+        
+        # Verify task belongs to user
+        task = await TaskService.get_task_by_id(task_id, user_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        return await TaskService.get_task_time_logs(task_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch time logs: {str(e)}")

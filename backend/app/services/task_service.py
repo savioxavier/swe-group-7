@@ -2,7 +2,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from ..config import supabase
-from ..models import TaskCreate, TaskUpdate, TaskResponse, TaskStatus
+from ..models import TaskCreate, TaskUpdate, TaskResponse, TaskStatus, TimeLogResponse
 from .plant_service import PlantService
 
 class TaskService:
@@ -22,7 +22,10 @@ class TaskService:
                 completed_at=datetime.fromisoformat(task_data["completed_at"]) if task_data.get("completed_at") else None,
                 created_at=datetime.fromisoformat(task_data["created_at"]),
                 user_id=task_data["user_id"],
-                plant_id=task_data.get("plant_id")
+                plant_id=task_data.get("plant_id"),
+                total_hours=task_data.get("total_hours", 0.0),
+                total_experience=task_data.get("total_experience", 0),
+                current_level=task_data.get("current_level", 0)
             ))
         
         return tasks
@@ -159,3 +162,47 @@ class TaskService:
             raise Exception("Task not found")
         
         return True
+    
+    @staticmethod
+    async def get_task_by_id(task_id: str, user_id: str) -> Optional[TaskResponse]:
+        """Get a specific task by ID for the authenticated user"""
+        response = supabase.table("tasks").select("*").eq("id", task_id).eq("user_id", user_id).execute()
+        
+        if not response.data:
+            return None
+        
+        task_data = response.data[0]
+        return TaskResponse(
+            id=task_data["id"],
+            title=task_data["title"],
+            description=task_data.get("description"),
+            category=task_data["category"],
+            status=task_data["status"],
+            due_date=datetime.fromisoformat(task_data["due_date"]) if task_data.get("due_date") else None,
+            completed_at=datetime.fromisoformat(task_data["completed_at"]) if task_data.get("completed_at") else None,
+            created_at=datetime.fromisoformat(task_data["created_at"]),
+            user_id=task_data["user_id"],
+            plant_id=task_data.get("plant_id"),
+            total_hours=task_data.get("total_hours", 0.0),
+            total_experience=task_data.get("total_experience", 0),
+            current_level=task_data.get("current_level", 0)
+        )
+    
+    @staticmethod
+    async def get_task_time_logs(task_id: str) -> List[TimeLogResponse]:
+        """Get all time logs for a specific task"""
+        response = supabase.table("task_time_logs").select("*").eq("task_id", task_id).order("date", desc=True).execute()
+        
+        time_logs = []
+        for log_data in response.data:
+            time_logs.append(TimeLogResponse(
+                id=log_data["id"],
+                task_id=log_data["task_id"],
+                user_id=log_data["user_id"],
+                hours=log_data["hours"],
+                experience_gained=log_data["experience_gained"],
+                date=datetime.fromisoformat(log_data["date"]),
+                created_at=datetime.fromisoformat(log_data["created_at"])
+            ))
+        
+        return time_logs
