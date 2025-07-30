@@ -6,6 +6,7 @@ import Home from './pages/Home'
 import SignIn from './pages/SignIn'
 import SignUp from './pages/SignUp'
 import Garden from './pages/Garden'
+import CanvasGarden from './pages/CanvasGarden'
 import './App.css'
 
 function AuthRedirect() {
@@ -28,6 +29,10 @@ function App() {
                 <Garden />
               </ProtectedRoute>
             } 
+          />
+          <Route 
+            path="/canvas-garden" 
+            element={<CanvasGarden />} 
           />
           <Route path="/app" element={<AuthRedirect />} />
           <Route path="*" element={<Navigate to="/" replace />} />

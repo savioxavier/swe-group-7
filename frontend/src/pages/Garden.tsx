@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Leaf, Plus, Settings, LogOut, User, Zap } from 'lucide-react'
+import { Leaf, Plus, Settings, LogOut, User, Zap, Palette } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { api } from '../lib/api'
 
@@ -197,6 +197,13 @@ export default function Garden() {
           </div>
           
           <div className="flex items-center space-x-4">
+            <a 
+              href="/canvas-garden"
+              className="p-2 text-green-100 hover:text-white transition-colors bg-white/10 rounded-lg"
+              title="Switch to Canvas Garden"
+            >
+              <Palette className="w-5 h-5" />
+            </a>
             <button className="p-2 text-green-100 hover:text-white transition-colors bg-white/10 rounded-lg">
               <Settings className="w-5 h-5" />
             </button>
