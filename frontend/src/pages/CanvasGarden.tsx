@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Plus } from 'lucide-react'
+import { Plus, Leaf, Settings, LogOut, User, Zap } from 'lucide-react'
+import { useAuth } from '../contexts/AuthContext'
 
 interface Plant {
   id: string
@@ -46,10 +47,11 @@ const getPlantSprite = (plantType: string, stage: number): string => {
   const stages = stageMap[spriteType] || stageMap.carrot
   const spriteStage = stages[Math.min(stage, stages.length - 1)]
   
-  return `/assets/sprites/growing_plants/${spriteType}/${spriteType}_${spriteStage}.png`
+  return `/assets/Sprites/${spriteType}/${spriteType}_${spriteStage}.png`
 }
 
 export default function CanvasGarden() {
+  const { user, logout } = useAuth()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [plants, setPlants] = useState<Plant[]>(mockPlants)
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null)
@@ -106,7 +108,7 @@ export default function CanvasGarden() {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     try {
-      const grassImg = await loadSprite('/assets/sprites/grass.png')
+      const grassImg = await loadSprite('/assets/Sprites/terrain/grass.png')
       if (grassImg) {
         for (let x = 0; x < GRID_WIDTH; x++) {
           for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -158,7 +160,7 @@ export default function CanvasGarden() {
       ctx.fillRect(0, 0, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE)
     }
     try {
-      const dirtImg = await loadSprite('/assets/sprites/dirt.png')
+      const dirtImg = await loadSprite('/assets/Sprites/terrain/dirt.png')
       if (dirtImg) {
         plants.forEach(plant => {
           const plantX = plant.x * CELL_SIZE
@@ -387,7 +389,46 @@ export default function CanvasGarden() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-800 via-green-700 to-green-600">
-      <div className="relative h-screen overflow-hidden">
+      <header className="bg-black/30 backdrop-blur-sm border-b border-white/20">
+        <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+              <Leaf className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-white">Canvas Garden</h1>
+              <p className="text-green-100 text-xs">{user?.username || user?.email}</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 text-white">
+              <div className="bg-white/10 px-2 py-1 rounded flex items-center space-x-1">
+                <Zap className="w-3 h-3 text-yellow-400" />
+                <span className="text-sm">Level 5</span>
+              </div>
+              <div className="bg-white/10 px-2 py-1 rounded">
+                <span className="text-sm">1250 XP</span>
+              </div>
+            </div>
+            
+            <button className="p-1 text-green-100 hover:text-white transition-colors bg-white/10 rounded">
+              <Settings className="w-4 h-4" />
+            </button>
+            <button className="p-1 text-green-100 hover:text-white transition-colors bg-white/10 rounded">
+              <User className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={logout}
+              className="p-1 text-green-100 hover:text-red-300 transition-colors bg-white/10 rounded"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="relative h-[calc(100vh-60px)] overflow-hidden">
         <div className="relative z-10 h-full">
           <div className="flex gap-6 h-full p-4">
               {/* Left Panel - Controls and Stats */}
