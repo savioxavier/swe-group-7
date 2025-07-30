@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Plus, Leaf, Settings, LogOut, User, Zap } from 'lucide-react'
+import { Plus, Leaf, Settings, LogOut, User, Zap, Info, BarChart3 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 interface Plant {
@@ -9,7 +9,7 @@ interface Plant {
   type: 'exercise' | 'study' | 'work' | 'selfcare' | 'creative'
   x: number
   y: number
-  stage: number // 0-5 (seed to fully grown)
+  stage: number
   lastWatered: Date
 }
 
@@ -21,11 +21,11 @@ const mockPlants: Plant[] = [
   { id: '5', name: 'Creative Sunflower', type: 'creative', x: 7, y: 2, stage: 1, lastWatered: new Date() }
 ]
 
-const GRID_WIDTH = 9
+const GRID_WIDTH = 11
 const GRID_HEIGHT = 7  
 const CELL_SIZE = 80
 
-const PLANT_SPRITE_MAP = {
+const PLANT_SPRITE_MAP: Record<string, string> = {
   exercise: 'carrot',
   study: 'tomat',
   work: 'wheat',
@@ -36,7 +36,7 @@ const PLANT_SPRITE_MAP = {
 const getPlantSprite = (plantType: string, stage: number): string => {
   const spriteType = PLANT_SPRITE_MAP[plantType] || 'carrot'
   
-  const stageMap = {
+  const stageMap: Record<string, number[]> = {
     carrot: [1, 3, 6, 9, 12, 16],
     tomat: [1, 4, 8, 12, 16, 20],
     wheat: [1, 2, 3, 4, 6, 7],
@@ -56,7 +56,11 @@ export default function CanvasGarden() {
   const [plants, setPlants] = useState<Plant[]>(mockPlants)
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null)
   const [isPlanting, setIsPlanting] = useState(false)
+  const [mode, setMode] = useState<'plant' | 'info' | 'garden'>('plant')
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null)
+  const [hoveredPlant, setHoveredPlant] = useState<Plant | null>(null)
+  const [showPlantSelector, setShowPlantSelector] = useState(false)
+  const [pendingPlantPosition, setPendingPlantPosition] = useState<{x: number, y: number} | null>(null)
   const [loadedSprites, setLoadedSprites] = useState<Map<string, HTMLImageElement>>(new Map())
 
   const loadSprite = useCallback((spritePath: string): Promise<HTMLImageElement> => {
@@ -89,12 +93,12 @@ export default function CanvasGarden() {
   }, [loadSprite])
 
   const getPlantColor = (type: string): string => {
-    const colors = {
-      exercise: '#ef4444', // red
-      study: '#3b82f6',   // blue
-      work: '#8b5cf6',    // purple
-      selfcare: '#10b981', // green
-      creative: '#f59e0b'  // yellow
+    const colors: Record<string, string> = {
+      exercise: '#ef4444',
+      study: '#3b82f6',
+      work: '#8b5cf6',
+      selfcare: '#10b981',
+      creative: '#f59e0b'
     }
     return colors[type] || '#6b7280'
   }
@@ -252,8 +256,45 @@ export default function CanvasGarden() {
         ctx.strokeRect(plant.x * CELL_SIZE + 1, plant.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2)
       }
 
+      if (hoveredPlant?.id === plant.id && mode === 'info') {
+        ctx.strokeStyle = '#06b6d4'
+        ctx.lineWidth = 2
+        ctx.strokeRect(plant.x * CELL_SIZE + 1, plant.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2)
+      }
+
       ctx.fillStyle = getPlantColor(plant.type)
       ctx.fillRect(plant.x * CELL_SIZE + 2, plant.y * CELL_SIZE + 2, 8, 8)
+
+      // Draw plant info overlay directly on the plant in info mode
+      if (mode === 'info' && (hoveredPlant?.id === plant.id || selectedPlant?.id === plant.id)) {
+        const cellX = plant.x * CELL_SIZE
+        const cellY = plant.y * CELL_SIZE
+        
+        // Semi-transparent overlay on the entire cell
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+        ctx.fillRect(cellX, cellY, CELL_SIZE, CELL_SIZE)
+        
+        // Plant name at the top (remove type prefix)
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 10px Arial'
+        ctx.textAlign = 'center'
+        
+        const plantNameOnly = plant.name.replace(/^(Exercise|Study|Work|Self-care|Creative)\s+/i, '')
+        const shortName = plantNameOnly.length > 12 ? plantNameOnly.substring(0, 10) + '...' : plantNameOnly
+        ctx.fillText(shortName, cellX + CELL_SIZE/2, cellY + 15)
+        
+        // Stage info
+        ctx.fillStyle = '#00ff88'
+        ctx.font = '9px Arial'
+        ctx.fillText(`Stage ${plant.stage}/5`, cellX + CELL_SIZE/2, cellY + 30)
+        
+        // Type info at the bottom
+        ctx.fillStyle = '#88ccff'
+        ctx.fillText(plant.type.toUpperCase(), cellX + CELL_SIZE/2, cellY + 45)
+        
+        // Reset text alignment
+        ctx.textAlign = 'left'
+      }
     }
 
     if (isPlanting && mousePos) {
@@ -267,11 +308,9 @@ export default function CanvasGarden() {
         ctx.globalAlpha = 1
       }
     }
-  }, [plants, selectedPlant, isPlanting, mousePos, getPlantSpriteImage, loadSprite])
+  }, [plants, selectedPlant, isPlanting, mousePos, hoveredPlant, mode, getPlantSpriteImage, loadSprite])
 
   const handleCanvasMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isPlanting) return
-    
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -279,7 +318,16 @@ export default function CanvasGarden() {
     const x = event.clientX - rect.left
     const y = event.clientY - rect.top
 
-    setMousePos({ x, y })
+    if (isPlanting) {
+      setMousePos({ x, y })
+    }
+
+    if (mode === 'info') {
+      const gridX = Math.floor(x / CELL_SIZE)
+      const gridY = Math.floor(y / CELL_SIZE)
+      const hoveredPlant = plants.find(p => p.x === gridX && p.y === gridY)
+      setHoveredPlant(hoveredPlant || null)
+    }
   }
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -293,33 +341,25 @@ export default function CanvasGarden() {
     const gridX = Math.floor(x / CELL_SIZE)
     const gridY = Math.floor(y / CELL_SIZE)
 
-    // Allow planting anywhere on the grass grid
     if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
-      if (isPlanting) {
-        // Plant new seed only in garden plots
-        const existingPlant = plants.find(p => p.x === gridX && p.y === gridY)
-        if (!existingPlant) {
-          const plantTypes = ['exercise', 'study', 'work', 'selfcare', 'creative']
-          const randomType = plantTypes[Math.floor(Math.random() * plantTypes.length)]
-          const newPlant: Plant = {
-            id: Date.now().toString(),
-            name: `${randomType.charAt(0).toUpperCase() + randomType.slice(1)} Plant`,
-            type: randomType,
-            x: gridX,
-            y: gridY,
-            stage: 0,
-            lastWatered: new Date()
+      const clickedPlant = plants.find(p => p.x === gridX && p.y === gridY)
+
+      if (mode === 'plant') {
+        if (isPlanting) {
+          if (!clickedPlant) {
+            setPendingPlantPosition({ x: gridX, y: gridY })
+            setShowPlantSelector(true)
           }
-          setPlants([...plants, newPlant])
+          setIsPlanting(false)
+        } else if (clickedPlant) {
+          setSelectedPlant(clickedPlant)
+        } else {
+          setSelectedPlant(null)
         }
-        setIsPlanting(false)
-      } else {
-        // Select existing plant
-        const clickedPlant = plants.find(p => p.x === gridX && p.y === gridY)
+      } else if (mode === 'info') {
         setSelectedPlant(clickedPlant || null)
       }
     } else if (!isPlanting) {
-      // Deselect if clicking outside garden plots
       setSelectedPlant(null)
     }
   }
@@ -342,16 +382,39 @@ export default function CanvasGarden() {
     }
   }
 
+  const createPlant = (type: 'exercise' | 'study' | 'work' | 'selfcare' | 'creative') => {
+    if (pendingPlantPosition) {
+      const plantNames = {
+        exercise: 'Carrot',
+        study: 'Tomato',
+        work: 'Wheat',
+        selfcare: 'Salad',
+        creative: 'Pumpkin'
+      }
+
+      const newPlant: Plant = {
+        id: Date.now().toString(),
+        name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${plantNames[type]}`,
+        type: type,
+        x: pendingPlantPosition.x,
+        y: pendingPlantPosition.y,
+        stage: 0,
+        lastWatered: new Date()
+      }
+      
+      setPlants([...plants, newPlant])
+      setShowPlantSelector(false)
+      setPendingPlantPosition(null)
+    }
+  }
+
   useEffect(() => {
     drawGarden()
   }, [drawGarden])
 
-  // Force redraw when plants change
   useEffect(() => {
     drawGarden()
   }, [plants, drawGarden])
-
-  // Preload sprites for better performance
   useEffect(() => {
     const preloadSprites = async () => {
       const plantTypes = ['exercise', 'study', 'work', 'selfcare', 'creative']
@@ -371,7 +434,6 @@ export default function CanvasGarden() {
     preloadSprites()
   }, [getPlantSpriteImage])
 
-  // Auto-grow plants over time (simulated)
   useEffect(() => {
     const interval = setInterval(() => {
       setPlants(prevPlants => 
@@ -390,125 +452,190 @@ export default function CanvasGarden() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-800 via-green-700 to-green-600">
       <header className="bg-black/30 backdrop-blur-sm border-b border-white/20">
-        <div className="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-              <Leaf className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-white">Canvas Garden</h1>
-              <p className="text-green-100 text-xs">{user?.username || user?.email}</p>
-            </div>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <div className="flex items-center space-x-2 text-white">
-              <div className="bg-white/10 px-2 py-1 rounded flex items-center space-x-1">
-                <Zap className="w-3 h-3 text-yellow-400" />
-                <span className="text-sm">Level 5</span>
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                <Leaf className="w-5 h-5 text-white" />
               </div>
-              <div className="bg-white/10 px-2 py-1 rounded">
-                <span className="text-sm">1250 XP</span>
+              <div>
+                <h1 className="text-xl font-bold text-white">Canvas Garden</h1>
+                <p className="text-green-100 text-sm">{user?.username || user?.email}</p>
               </div>
             </div>
             
-            <button className="p-1 text-green-100 hover:text-white transition-colors bg-white/10 rounded">
-              <Settings className="w-4 h-4" />
-            </button>
-            <button className="p-1 text-green-100 hover:text-white transition-colors bg-white/10 rounded">
-              <User className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={logout}
-              className="p-1 text-green-100 hover:text-red-300 transition-colors bg-white/10 rounded"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-1 bg-white/10 rounded-lg p-1">
+                <button
+                  onClick={() => {
+                    setMode('plant')
+                    setIsPlanting(false)
+                    setHoveredPlant(null)
+                  }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    mode === 'plant' 
+                      ? 'bg-green-600 text-white' 
+                      : 'text-white hover:bg-white/20'
+                  }`}
+                >
+                  <Plus className="w-4 h-4 inline mr-1" />
+                  Plant
+                </button>
+                <button
+                  onClick={() => {
+                    setMode('info')
+                    setIsPlanting(false)
+                    setMousePos(null)
+                  }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    mode === 'info' 
+                      ? 'bg-cyan-600 text-white' 
+                      : 'text-white hover:bg-white/20'
+                  }`}
+                >
+                  <Info className="w-4 h-4 inline mr-1" />
+                  Info
+                </button>
+                <button
+                  onClick={() => {
+                    setMode('garden')
+                    setIsPlanting(false)
+                    setMousePos(null)
+                    setHoveredPlant(null)
+                  }}
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    mode === 'garden' 
+                      ? 'bg-purple-600 text-white' 
+                      : 'text-white hover:bg-white/20'
+                  }`}
+                >
+                  <BarChart3 className="w-4 h-4 inline mr-1" />
+                  Garden
+                </button>
+              </div>
+
+              {mode === 'plant' && (
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setIsPlanting(!isPlanting)}
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isPlanting 
+                        ? 'bg-green-600 text-white' 
+                        : 'bg-white/10 text-white hover:bg-white/20'
+                    }`}
+                  >
+                    {isPlanting ? 'Cancel' : 'Add Plant'}
+                  </button>
+                  
+                  <button
+                    onClick={waterPlant}
+                    disabled={!selectedPlant}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors"
+                  >
+                    Water
+                  </button>
+                  
+                  <button
+                    onClick={harvestPlant}
+                    disabled={!selectedPlant || selectedPlant.stage < 4}
+                    className="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors"
+                  >
+                    Harvest
+                  </button>
+                </div>
+              )}
+
+              <div className="flex items-center space-x-2 text-white">
+                <div className="bg-white/10 px-3 py-2 rounded flex items-center space-x-1">
+                  <Zap className="w-4 h-4 text-yellow-400" />
+                  <span className="text-sm">Level 5</span>
+                </div>
+                <div className="bg-white/10 px-3 py-2 rounded">
+                  <span className="text-sm">1250 XP</span>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-1">
+                <button className="p-2 text-green-100 hover:text-white transition-colors bg-white/10 rounded">
+                  <Settings className="w-4 h-4" />
+                </button>
+                <button className="p-2 text-green-100 hover:text-white transition-colors bg-white/10 rounded">
+                  <User className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={logout}
+                  className="p-2 text-green-100 hover:text-red-300 transition-colors bg-white/10 rounded"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="relative h-[calc(100vh-60px)] overflow-hidden">
+      <div className="relative h-[calc(100vh-100px)] overflow-hidden">
         <div className="relative z-10 h-full">
-          <div className="flex gap-6 h-full p-4">
-              {/* Left Panel - Controls and Stats */}
-              <div className="w-64 space-y-4">
-                {/* Garden Controls */}
-                <div className="bg-white/10 backdrop-blur-md rounded-lg p-4 border border-white/20">
-                  <h3 className="text-md font-bold text-white mb-3">Controls</h3>
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => setIsPlanting(!isPlanting)}
-                      className={`w-full px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                        isPlanting 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-white/10 text-white hover:bg-white/20'
-                      }`}
-                    >
-                      <Plus className="w-4 h-4 inline mr-1" />
-                      {isPlanting ? 'Cancel' : 'Plant'}
-                    </button>
-                    
-                    <button
-                      onClick={waterPlant}
-                      disabled={!selectedPlant}
-                      className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors"
-                    >
-                      Water
-                    </button>
-                    
-                    <button
-                      onClick={harvestPlant}
-                      disabled={!selectedPlant || selectedPlant.stage < 4}
-                      className="w-full px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors"
-                    >
-                      Harvest
-                    </button>
+          {mode === 'garden' ? (
+            <div className="flex h-full p-4 space-x-6 justify-center">
+              {/* Garden Stats Panel */}
+              <div className="w-80 bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 overflow-y-auto">
+                <h2 className="text-xl font-bold text-white mb-4">Garden Overview</h2>
+                
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="bg-white/10 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-white">{plants.length}</div>
+                    <div className="text-green-100 text-sm">Total Plants</div>
+                  </div>
+                  <div className="bg-white/10 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-yellow-400">{plants.filter(p => p.stage >= 4).length}</div>
+                    <div className="text-green-100 text-sm">Ready to Harvest</div>
+                  </div>
+                  <div className="bg-white/10 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-green-400">{plants.filter(p => p.stage === 5).length}</div>
+                    <div className="text-green-100 text-sm">Fully Grown</div>
+                  </div>
+                  <div className="bg-white/10 rounded-lg p-3 text-center">
+                    <div className="text-2xl font-bold text-blue-400">{Math.round((plants.reduce((sum, p) => sum + p.stage, 0) / (plants.length * 5)) * 100)}%</div>
+                    <div className="text-green-100 text-sm">Progress</div>
                   </div>
                 </div>
 
-                {/* Plant Info Panel */}
-                {selectedPlant && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="bg-white/10 backdrop-blur-md rounded-lg p-4 border border-white/20"
-                  >
-                    <h3 className="text-md font-bold text-white mb-2">{selectedPlant.name}</h3>
-                    <div className="space-y-1 text-green-100 text-sm">
-                      <p>Type: <span className="capitalize">{selectedPlant.type}</span></p>
-                      <p>Stage: {selectedPlant.stage}/5</p>
-                      <p>Position: ({selectedPlant.x}, {selectedPlant.y})</p>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Garden Stats */}
-                <div className="bg-white/10 backdrop-blur-md rounded-lg p-4 border border-white/20">
-                  <h3 className="text-md font-bold text-white mb-3">Stats</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-white">{plants.length}</div>
-                      <div className="text-green-100 text-xs">Plants</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-white">{plants.filter(p => p.stage >= 4).length}</div>
-                      <div className="text-green-100 text-xs">Ready</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-white">{plants.filter(p => p.stage === 5).length}</div>
-                      <div className="text-green-100 text-xs">Grown</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-lg font-bold text-white">{Math.round((plants.reduce((sum, p) => sum + p.stage, 0) / (plants.length * 5)) * 100)}%</div>
-                      <div className="text-green-100 text-xs">Progress</div>
-                    </div>
-                  </div>
+                <h3 className="text-lg font-bold text-white mb-3">All Plants</h3>
+                <div className="space-y-2">
+                  {plants.map((plant) => (
+                    <motion.div
+                      key={plant.id}
+                      className="bg-white/10 rounded-lg p-3 border border-white/20 hover:bg-white/20 transition-colors cursor-pointer"
+                      onClick={() => setSelectedPlant(plant)}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h4 className="font-medium text-white">
+                            {plant.name.replace(/^(Exercise|Study|Work|Self-care|Creative)\s+/i, '')}
+                          </h4>
+                          <p className="text-xs text-green-100 capitalize">{plant.type}</p>
+                          <p className="text-xs text-gray-300">Position: ({plant.x}, {plant.y})</p>
+                        </div>
+                        <div className="text-right">
+                          <div className={`text-sm font-bold ${
+                            plant.stage >= 4 ? 'text-yellow-400' : 
+                            plant.stage >= 2 ? 'text-green-400' : 'text-gray-400'
+                          }`}>
+                            Stage {plant.stage}/5
+                          </div>
+                          <div className="text-xs text-gray-300">
+                            {plant.stage >= 4 ? 'Ready!' : 
+                             plant.stage >= 2 ? 'Growing' : 'Young'}
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
                 </div>
               </div>
 
-              {/* Right Panel - Canvas */}
-              <div className="flex-1 bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
+              <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 flex items-center justify-center" style={{width: `${GRID_WIDTH * CELL_SIZE + 40}px`, height: `${GRID_HEIGHT * CELL_SIZE + 40}px`}}>
                 <canvas
                   ref={canvasRef}
                   width={GRID_WIDTH * CELL_SIZE}
@@ -518,9 +645,217 @@ export default function CanvasGarden() {
                   className="border-2 border-green-400/30 rounded-lg cursor-pointer bg-green-900/20"
                 />
               </div>
-          </div>
+            </div>
+          ) : (
+            <div className={`flex h-full p-4 transition-all duration-300 justify-center ${selectedPlant && mode === 'info' ? 'pr-2' : ''}`}>
+              {selectedPlant && mode === 'info' && (
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="w-80 mr-6 bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 overflow-y-auto"
+                >
+                  <div className="text-center mb-6">
+                    <div className={`w-16 h-16 rounded-full mx-auto mb-3 flex items-center justify-center ${
+                      selectedPlant.type === 'exercise' ? 'bg-red-500' :
+                      selectedPlant.type === 'study' ? 'bg-blue-500' :
+                      selectedPlant.type === 'work' ? 'bg-purple-500' :
+                      selectedPlant.type === 'selfcare' ? 'bg-green-500' : 'bg-yellow-500'
+                    }`}>
+                      <span className="text-2xl text-white font-bold">
+                        {selectedPlant.name.replace(/^(Exercise|Study|Work|Self-care|Creative)\s+/i, '').charAt(0)}
+                      </span>
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-1">
+                      {selectedPlant.name.replace(/^(Exercise|Study|Work|Self-care|Creative)\s+/i, '')}
+                    </h3>
+                    <p className="text-sm text-green-100 capitalize">{selectedPlant.type} Plant</p>
+                  </div>
+
+                  <div className="mb-6">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium text-white">Growth Progress</span>
+                      <span className="text-sm text-green-100">{selectedPlant.stage}/5</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-2">
+                      <div 
+                        className={`h-2 rounded-full transition-all duration-300 ${
+                          selectedPlant.stage >= 4 ? 'bg-yellow-400' : 'bg-green-400'
+                        }`}
+                        style={{ width: `${(selectedPlant.stage / 5) * 100}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-300 mt-1">
+                      {selectedPlant.stage === 0 ? 'Just planted' :
+                       selectedPlant.stage === 1 ? 'Sprouting' :
+                       selectedPlant.stage === 2 ? 'Growing' :
+                       selectedPlant.stage === 3 ? 'Developing' :
+                       selectedPlant.stage === 4 ? 'Ready to harvest' : 'Fully grown'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-4 mb-6">
+                    <div className="bg-white/5 rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-white mb-3">Plant Details</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">Category:</span>
+                          <span className="text-white capitalize">{selectedPlant.type}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">Position:</span>
+                          <span className="text-white">({selectedPlant.x}, {selectedPlant.y})</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">Last Watered:</span>
+                          <span className="text-white">{selectedPlant.lastWatered.toLocaleDateString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">Status:</span>
+                          <span className={`font-medium ${
+                            selectedPlant.stage >= 4 ? 'text-yellow-400' :
+                            selectedPlant.stage >= 2 ? 'text-green-400' : 'text-gray-400'
+                          }`}>
+                            {selectedPlant.stage >= 4 ? 'Ready to harvest' :
+                             selectedPlant.stage >= 2 ? 'Healthy & growing' : 'Young plant'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white/5 rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-white mb-3">Care Tips</h4>
+                      <div className="space-y-2 text-xs text-gray-300">
+                        {selectedPlant.stage < 4 ? (
+                          <>
+                            <p>• Water regularly to help growth</p>
+                            <p>• Plant will grow automatically over time</p>
+                            <p>• Each stage brings new visual changes</p>
+                          </>
+                        ) : (
+                          <>
+                            <p>• This plant is ready for harvest!</p>
+                            <p>• Harvesting will give you rewards</p>
+                            <p>• Use Plant Mode to harvest</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-white/5 rounded-lg p-4">
+                      <h4 className="text-sm font-bold text-white mb-3">Similar Plants</h4>
+                      <div className="text-xs text-gray-300">
+                        <p>{plants.filter(p => p.type === selectedPlant.type && p.id !== selectedPlant.id).length} other {selectedPlant.type} plants in garden</p>
+                        <p>{plants.filter(p => p.stage === selectedPlant.stage && p.id !== selectedPlant.id).length} plants at same growth stage</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => setSelectedPlant(null)}
+                    className="w-full px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Close Details
+                  </button>
+                </motion.div>
+              )}
+
+
+              <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 flex items-center justify-center" style={{width: `${GRID_WIDTH * CELL_SIZE + 40}px`, height: `${GRID_HEIGHT * CELL_SIZE + 40}px`}}>
+                <canvas
+                  ref={canvasRef}
+                  width={GRID_WIDTH * CELL_SIZE}
+                  height={GRID_HEIGHT * CELL_SIZE}
+                  onClick={handleCanvasClick}
+                  onMouseMove={handleCanvasMouseMove}
+                  className="border-2 border-green-400/30 rounded-lg cursor-pointer bg-green-900/20"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {showPlantSelector && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 max-w-md w-full mx-4"
+          >
+            <h3 className="text-xl font-bold text-white mb-4 text-center">Choose Plant Type</h3>
+            <p className="text-green-100 text-sm text-center mb-6">
+              Select what type of plant to grow at position ({pendingPlantPosition?.x}, {pendingPlantPosition?.y})
+            </p>
+            
+            <div className="grid grid-cols-1 gap-3">
+              <button
+                onClick={() => createPlant('exercise')}
+                className="flex items-center justify-between p-4 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 rounded-lg text-white transition-colors"
+              >
+                <div className="text-left">
+                  <div className="font-medium">Exercise Carrot</div>
+                  <div className="text-sm text-red-200">Physical activity tasks</div>
+                </div>
+                <div className="w-8 h-8 bg-red-500 rounded"></div>
+              </button>
+              
+              <button
+                onClick={() => createPlant('study')}
+                className="flex items-center justify-between p-4 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-white transition-colors"
+              >
+                <div className="text-left">
+                  <div className="font-medium">Study Tomato</div>
+                  <div className="text-sm text-blue-200">Learning and education</div>
+                </div>
+                <div className="w-8 h-8 bg-blue-500 rounded"></div>
+              </button>
+              
+              <button
+                onClick={() => createPlant('work')}
+                className="flex items-center justify-between p-4 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-lg text-white transition-colors"
+              >
+                <div className="text-left">
+                  <div className="font-medium">Work Wheat</div>
+                  <div className="text-sm text-purple-200">Professional tasks</div>
+                </div>
+                <div className="w-8 h-8 bg-purple-500 rounded"></div>
+              </button>
+              
+              <button
+                onClick={() => createPlant('selfcare')}
+                className="flex items-center justify-between p-4 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 rounded-lg text-white transition-colors"
+              >
+                <div className="text-left">
+                  <div className="font-medium">Self-care Salad</div>
+                  <div className="text-sm text-green-200">Health and wellness</div>
+                </div>
+                <div className="w-8 h-8 bg-green-500 rounded"></div>
+              </button>
+              
+              <button
+                onClick={() => createPlant('creative')}
+                className="flex items-center justify-between p-4 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/30 rounded-lg text-white transition-colors"
+              >
+                <div className="text-left">
+                  <div className="font-medium">Creative Pumpkin</div>
+                  <div className="text-sm text-yellow-200">Arts and creativity</div>
+                </div>
+                <div className="w-8 h-8 bg-yellow-500 rounded"></div>
+              </button>
+            </div>
+            
+            <button
+              onClick={() => {
+                setShowPlantSelector(false)
+                setPendingPlantPosition(null)
+              }}
+              className="w-full mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+            >
+              Cancel
+            </button>
+          </motion.div>
+        </div>
+      )}
     </div>
   )
 }

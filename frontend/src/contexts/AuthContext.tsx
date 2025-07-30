@@ -23,7 +23,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     const storedUser = localStorage.getItem('user')
     
     if (storedToken && storedUser) {
-      // Validate token by making a test request
       validateToken(storedToken)
         .then(() => {
           setToken(storedToken)

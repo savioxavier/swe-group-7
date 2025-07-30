@@ -5,7 +5,6 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Home from './pages/Home'
 import SignIn from './pages/SignIn'
 import SignUp from './pages/SignUp'
-import Garden from './pages/Garden'
 import CanvasGarden from './pages/CanvasGarden'
 import './App.css'
 
@@ -26,13 +25,17 @@ function App() {
             path="/garden" 
             element={
               <ProtectedRoute>
-                <Garden />
+                <CanvasGarden />
               </ProtectedRoute>
             } 
           />
           <Route 
             path="/canvas-garden" 
-            element={<CanvasGarden />} 
+            element={
+              <ProtectedRoute>
+                <CanvasGarden />
+              </ProtectedRoute>
+            } 
           />
           <Route path="/app" element={<AuthRedirect />} />
           <Route path="*" element={<Navigate to="/" replace />} />
