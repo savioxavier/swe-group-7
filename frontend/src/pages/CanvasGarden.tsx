@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Plus, Leaf, Settings, LogOut, User, Zap, Info, BarChart3 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { api } from '../lib/api'
+import { PlantCreate, PlantResponse, PlantCareCreate, UserProgressResponse } from '../types'
 
 interface Plant {
   id: string
@@ -11,38 +13,54 @@ interface Plant {
   y: number
   stage: number
   lastWatered: Date
+  plantSprite?: string
 }
 
 const GRID_WIDTH = 11
-const GRID_HEIGHT = 7  
+const GRID_HEIGHT = 7
 const CELL_SIZE = 80
 
-const PLANT_SPRITE_MAP: Record<string, string> = {
-  exercise: 'carrot',
-  study: 'tomat',
-  work: 'wheat',
-  selfcare: 'salad',
-  creative: 'pumpkin'
+const CATEGORY_PLANTS: Record<string, string[]> = {
+  exercise: ['carrot', 'beet', 'radish'],
+  study: ['tomat', 'eggplant', 'pepper'],
+  work: ['corn', 'wheat', 'peas', 'potato'],
+  selfcare: ['cabbage', 'salad', 'spinach'],
+  creative: ['cucumber', 'pumpkin', 'watermelon', 'onion']
 }
 
-const mockPlants: Plant[] = [
-  { id: '1', name: 'Exercise Carrot', type: 'exercise', x: 0, y: 0, stage: 4, lastWatered: new Date() },
-  { id: '2', name: 'Study Tomato', type: 'study', x: 1, y: 0, stage: 3, lastWatered: new Date() },
-  { id: '3', name: 'Work Wheat', type: 'work', x: 3, y: 1, stage: 2, lastWatered: new Date() },
-  { id: '4', name: 'Self-care Cauliflower', type: 'selfcare', x: 6, y: 1, stage: 5, lastWatered: new Date() },
-  { id: '5', name: 'Creative Sunflower', type: 'creative', x: 7, y: 2, stage: 1, lastWatered: new Date() }
+const PLANT_CATEGORIES = [
+  { value: 'exercise', label: 'Exercise', description: 'Physical activity tasks' },
+  { value: 'study', label: 'Study', description: 'Learning and education' },
+  { value: 'work', label: 'Work', description: 'Professional tasks' },
+  { value: 'selfcare', label: 'Self-care', description: 'Health and wellness' },
+  { value: 'creative', label: 'Creative', description: 'Arts and creativity' }
 ]
 
-
-const getPlantSprite = (plantType: string, stage: number): string => {
-  const spriteType = PLANT_SPRITE_MAP[plantType] || 'carrot'
+const getRandomPlantForCategory = (category: string): string => {
+  const plants = CATEGORY_PLANTS[category] || CATEGORY_PLANTS.exercise
+  return plants[Math.floor(Math.random() * plants.length)]
+}
+const getPlantSprite = (plant: Plant, stage: number): string => {
+  const spriteType = plant.plantSprite || getRandomPlantForCategory(plant.type)
   
   const stageMap: Record<string, number[]> = {
     carrot: [1, 3, 6, 9, 12, 16],
+    beet: [1, 3, 6, 9, 11, 13],
+    radish: [1, 2, 3, 5, 6, 8],
     tomat: [1, 4, 8, 12, 16, 20],
+    eggplant: [1, 2, 4, 6, 8, 9],
+    pepper: [1, 3, 5, 8, 10, 12],
+    corn: [1, 4, 8, 12, 16, 20],
     wheat: [1, 2, 3, 4, 6, 7],
+    peas: [1, 2, 3, 5, 7, 8],
+    potato: [1, 2, 3, 4, 6, 7],
+    cabbage: [1, 4, 8, 12, 16, 20],
     salad: [1, 2, 3, 4, 5, 7],
-    pumpkin: [1, 4, 8, 12, 16, 20]
+    spinach: [1, 2, 3, 4, 5, 5],
+    cucumber: [1, 4, 8, 12, 16, 20],
+    pumpkin: [1, 4, 8, 12, 16, 20],
+    watermelon: [1, 4, 8, 12, 16, 19],
+    onion: [1, 2, 3, 4, 5, 6]
   }
   
   const stages = stageMap[spriteType] || stageMap.carrot
@@ -51,17 +69,34 @@ const getPlantSprite = (plantType: string, stage: number): string => {
   return `/assets/Sprites/${spriteType}/${spriteType}_${spriteStage}.png`
 }
 
+const convertApiPlantToLocal = (apiPlant: PlantResponse): Plant => ({
+  id: apiPlant.id,
+  name: apiPlant.name,
+  type: apiPlant.plant_type,
+  x: apiPlant.position_x,
+  y: apiPlant.position_y,
+  stage: Math.floor(apiPlant.growth_level / 20),
+  lastWatered: new Date(apiPlant.updated_at),
+  plantSprite: apiPlant.plant_sprite
+})
+
 export default function CanvasGarden() {
-  const { user, logout } = useAuth()
+  const { user, logout, token } = useAuth()
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [plants, setPlants] = useState<Plant[]>(mockPlants)
+  const [plants, setPlants] = useState<Plant[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userProgress, setUserProgress] = useState<UserProgressResponse | null>(null)
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null)
   const [isPlanting, setIsPlanting] = useState(false)
   const [mode, setMode] = useState<'plant' | 'info' | 'garden'>('plant')
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null)
   const [hoveredPlant, setHoveredPlant] = useState<Plant | null>(null)
-  const [showPlantSelector, setShowPlantSelector] = useState(false)
+  const [showPlantCreator, setShowPlantCreator] = useState(false)
   const [pendingPlantPosition, setPendingPlantPosition] = useState<{x: number, y: number} | null>(null)
+  const [plantForm, setPlantForm] = useState({
+    name: '',
+    category: ''
+  })
   const [loadedSprites, setLoadedSprites] = useState<Map<string, HTMLImageElement>>(new Map())
 
   const loadSprite = useCallback((spritePath: string): Promise<HTMLImageElement> => {
@@ -83,12 +118,12 @@ export default function CanvasGarden() {
     })
   }, [loadedSprites])
 
-  const getPlantSpriteImage = useCallback(async (type: string, stage: number): Promise<HTMLImageElement | null> => {
+  const getPlantSpriteImage = useCallback(async (plant: Plant, stage: number): Promise<HTMLImageElement | null> => {
     try {
-      const spritePath = getPlantSprite(type, stage)
+      const spritePath = getPlantSprite(plant, stage)
       return await loadSprite(spritePath)
     } catch (error) {
-      console.warn(`Failed to load sprite for ${type} stage ${stage}:`, error)
+      console.warn(`Failed to load sprite for ${plant.type} stage ${stage}:`, error)
       return null
     }
   }, [loadSprite])
@@ -223,7 +258,7 @@ export default function CanvasGarden() {
       const centerY = plant.y * CELL_SIZE + CELL_SIZE / 2
 
       try {
-        const spriteImg = await getPlantSpriteImage(plant.type, plant.stage)
+        const spriteImg = await getPlantSpriteImage(plant, plant.stage)
         if (spriteImg) {
           ctx.save()
           ctx.filter = 'contrast(1.3) saturate(1.2) brightness(1.1)'
@@ -287,7 +322,7 @@ export default function CanvasGarden() {
         // Stage info
         ctx.fillStyle = '#00ff88'
         ctx.font = '9px Arial'
-        ctx.fillText(`Stage ${plant.stage}/5`, cellX + CELL_SIZE/2, cellY + 30)
+        ctx.fillText(`${Math.floor((plant.stage / 5) * 100)}%`, cellX + CELL_SIZE/2, cellY + 30)
         
         // Type info at the bottom
         ctx.fillStyle = '#88ccff'
@@ -349,7 +384,8 @@ export default function CanvasGarden() {
         if (isPlanting) {
           if (!clickedPlant) {
             setPendingPlantPosition({ x: gridX, y: gridY })
-            setShowPlantSelector(true)
+            setShowPlantCreator(true)
+            setPlantForm({ name: '', category: '' })
           }
           setIsPlanting(false)
         } else if (clickedPlant) {
@@ -365,49 +401,113 @@ export default function CanvasGarden() {
     }
   }
 
-  const waterPlant = () => {
-    if (selectedPlant) {
-      setPlants(plants.map(p => 
-        p.id === selectedPlant.id 
-          ? { ...p, stage: Math.min(5, p.stage + 1), lastWatered: new Date() }
-          : p
-      ))
-      setSelectedPlant({ ...selectedPlant, stage: Math.min(5, selectedPlant.stage + 1) })
-    }
-  }
-
-  const harvestPlant = () => {
-    if (selectedPlant && selectedPlant.stage >= 4) {
-      setPlants(plants.filter(p => p.id !== selectedPlant.id))
-      setSelectedPlant(null)
-    }
-  }
-
-  const createPlant = (type: 'exercise' | 'study' | 'work' | 'selfcare' | 'creative') => {
-    if (pendingPlantPosition) {
-      const plantNames = {
-        exercise: 'Carrot',
-        study: 'Tomato',
-        work: 'Wheat',
-        selfcare: 'Salad',
-        creative: 'Pumpkin'
-      }
-
-      const newPlant: Plant = {
-        id: Date.now().toString(),
-        name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${plantNames[type]}`,
-        type: type,
-        x: pendingPlantPosition.x,
-        y: pendingPlantPosition.y,
-        stage: 0,
-        lastWatered: new Date()
+  const waterPlant = async () => {
+    if (!selectedPlant) return
+    
+    try {
+      const careData: PlantCareCreate = {
+        plant_id: selectedPlant.id,
+        care_type: 'water'
       }
       
-      setPlants([...plants, newPlant])
-      setShowPlantSelector(false)
-      setPendingPlantPosition(null)
+      await api.careForPlant(careData)
+      
+      await loadPlants()
+      await loadUserProgress()
+      const updatedPlant = plants.find(p => p.id === selectedPlant.id)
+      if (updatedPlant) {
+        setSelectedPlant(updatedPlant)
+      }
+    } catch (error) {
+      console.error('Failed to water plant:', error)
+      alert('Failed to water plant. Please try again.')
     }
   }
+
+  const harvestPlant = async () => {
+    if (!selectedPlant || selectedPlant.stage < 4) return
+    
+    try {
+      const careData: PlantCareCreate = {
+        plant_id: selectedPlant.id,
+        care_type: 'task_complete'
+      }
+      
+      await api.careForPlant(careData)
+      await api.deletePlant(selectedPlant.id)
+      await loadPlants()
+      await loadUserProgress()
+      
+      setSelectedPlant(null)
+    } catch (error) {
+      console.error('Failed to harvest plant:', error)
+      alert('Failed to harvest plant. Please try again.')
+    }
+  }
+
+  const createPlant = async () => {
+    if (pendingPlantPosition && plantForm.name && plantForm.category) {
+      try {
+        const selectedSprite = getRandomPlantForCategory(plantForm.category)
+        const plantData: PlantCreate = {
+          name: plantForm.name.trim(),
+          plant_type: plantForm.category as 'exercise' | 'study' | 'work' | 'selfcare' | 'creative',
+          plant_sprite: selectedSprite,
+          position_x: pendingPlantPosition.x,
+          position_y: pendingPlantPosition.y
+        }
+        
+        const apiPlant = await api.createPlant(plantData)
+        const newPlant = convertApiPlantToLocal(apiPlant)
+        
+        setPlants([...plants, newPlant])
+        setShowPlantCreator(false)
+        setPendingPlantPosition(null)
+        setPlantForm({ name: '', category: '' })
+      } catch (error) {
+        console.error('Failed to create plant:', error)
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        alert(`Failed to create plant: ${errorMessage}`)
+      }
+    }
+  }
+
+  const cancelPlantCreation = () => {
+    setShowPlantCreator(false)
+    setPendingPlantPosition(null)
+    setPlantForm({ name: '', category: '' })
+  }
+
+  const isFormValid = plantForm.name.trim() && plantForm.category
+
+  const loadPlants = useCallback(async () => {
+    if (!token) return
+    try {
+      setLoading(true)
+      const apiPlants = await api.getPlants()
+      const localPlants = apiPlants.map(convertApiPlantToLocal)
+      setPlants(localPlants)
+    } catch (error) {
+      console.error('Failed to load plants:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
+
+  const loadUserProgress = useCallback(async () => {
+    if (!token) return
+    try {
+      const progress = await api.getUserProgress()
+      setUserProgress(progress)
+    } catch (error) {
+      console.error('Failed to load user progress:', error)
+    }
+  }, [token])
+
+  useEffect(() => {
+    loadPlants()
+    loadUserProgress()
+  }, [loadPlants, loadUserProgress])
 
   useEffect(() => {
     drawGarden()
@@ -418,15 +518,20 @@ export default function CanvasGarden() {
   }, [plants, drawGarden])
   useEffect(() => {
     const preloadSprites = async () => {
-      const plantTypes = ['exercise', 'study', 'work', 'selfcare', 'creative']
+      const allPlants = Object.values(CATEGORY_PLANTS).flat()
       const stages = [0, 1, 2, 3, 4, 5]
       
-      for (const type of plantTypes) {
+      for (const plantSprite of allPlants) {
         for (const stage of stages) {
           try {
-            await getPlantSpriteImage(type, stage)
+            const mockPlant: Plant = { 
+              id: 'temp', name: 'temp', type: 'exercise', 
+              x: 0, y: 0, stage, lastWatered: new Date(),
+              plantSprite 
+            }
+            await getPlantSpriteImage(mockPlant, stage)
           } catch {
-            console.warn(`Failed to preload sprite for ${type} stage ${stage}`)
+            console.warn(`Failed to preload sprite for ${plantSprite} stage ${stage}`)
           }
         }
       }
@@ -435,20 +540,6 @@ export default function CanvasGarden() {
     preloadSprites()
   }, [getPlantSpriteImage])
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPlants(prevPlants => 
-        prevPlants.map(plant => {
-          if (plant.stage < 5 && Math.random() < 0.1) {
-            return { ...plant, stage: plant.stage + 1 }
-          }
-          return plant
-        })
-      )
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-800 via-green-700 to-green-600">
@@ -549,10 +640,10 @@ export default function CanvasGarden() {
               <div className="flex items-center space-x-2 text-white">
                 <div className="bg-white/10 px-3 py-2 rounded flex items-center space-x-1">
                   <Zap className="w-4 h-4 text-yellow-400" />
-                  <span className="text-sm">Level 5</span>
+                  <span className="text-sm">Level {userProgress?.level || 1}</span>
                 </div>
                 <div className="bg-white/10 px-3 py-2 rounded">
-                  <span className="text-sm">1250 XP</span>
+                  <span className="text-sm">{userProgress?.total_experience || 0} XP</span>
                 </div>
               </div>
               
@@ -597,7 +688,7 @@ export default function CanvasGarden() {
                     <div className="text-green-100 text-sm">Fully Grown</div>
                   </div>
                   <div className="bg-white/10 rounded-lg p-3 text-center">
-                    <div className="text-2xl font-bold text-blue-400">{Math.round((plants.reduce((sum, p) => sum + p.stage, 0) / (plants.length * 5)) * 100)}%</div>
+                    <div className="text-2xl font-bold text-blue-400">{plants.length > 0 ? Math.round((plants.reduce((sum, p) => sum + p.stage, 0) / (plants.length * 5)) * 100) : 0}%</div>
                     <div className="text-green-100 text-sm">Progress</div>
                   </div>
                 </div>
@@ -623,7 +714,7 @@ export default function CanvasGarden() {
                             plant.stage >= 4 ? 'text-yellow-400' : 
                             plant.stage >= 2 ? 'text-green-400' : 'text-gray-400'
                           }`}>
-                            Stage {plant.stage}/5
+                            {Math.floor((plant.stage / 5) * 100)}% grown
                           </div>
                           <div className="text-xs text-gray-300">
                             {plant.stage >= 4 ? 'Ready!' : 
@@ -675,7 +766,7 @@ export default function CanvasGarden() {
                   <div className="mb-6">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-medium text-white">Growth Progress</span>
-                      <span className="text-sm text-green-100">{selectedPlant.stage}/5</span>
+                      <span className="text-sm text-green-100">{Math.floor((selectedPlant.stage / 5) * 100)}%</span>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-2">
                       <div 
@@ -776,85 +867,84 @@ export default function CanvasGarden() {
         </div>
       </div>
 
-      {showPlantSelector && (
+      {showPlantCreator && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 max-w-md w-full mx-4"
           >
-            <h3 className="text-xl font-bold text-white mb-4 text-center">Choose Plant Type</h3>
+            <h3 className="text-xl font-bold text-white mb-4 text-center">Create New Plant</h3>
             <p className="text-green-100 text-sm text-center mb-6">
-              Select what type of plant to grow at position ({pendingPlantPosition?.x}, {pendingPlantPosition?.y})
+              Position: ({pendingPlantPosition?.x}, {pendingPlantPosition?.y})
             </p>
             
-            <div className="grid grid-cols-1 gap-3">
-              <button
-                onClick={() => createPlant('exercise')}
-                className="flex items-center justify-between p-4 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 rounded-lg text-white transition-colors"
-              >
-                <div className="text-left">
-                  <div className="font-medium">Exercise Carrot</div>
-                  <div className="text-sm text-red-200">Physical activity tasks</div>
-                </div>
-                <div className="w-8 h-8 bg-red-500 rounded"></div>
-              </button>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-white text-sm font-medium mb-2">Plant Name</label>
+                <input
+                  type="text"
+                  value={plantForm.name}
+                  onChange={(e) => setPlantForm({...plantForm, name: e.target.value})}
+                  placeholder="Enter plant name..."
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500"
+                  maxLength={100}
+                />
+              </div>
               
-              <button
-                onClick={() => createPlant('study')}
-                className="flex items-center justify-between p-4 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 rounded-lg text-white transition-colors"
-              >
-                <div className="text-left">
-                  <div className="font-medium">Study Tomato</div>
-                  <div className="text-sm text-blue-200">Learning and education</div>
-                </div>
-                <div className="w-8 h-8 bg-blue-500 rounded"></div>
-              </button>
-              
-              <button
-                onClick={() => createPlant('work')}
-                className="flex items-center justify-between p-4 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-lg text-white transition-colors"
-              >
-                <div className="text-left">
-                  <div className="font-medium">Work Wheat</div>
-                  <div className="text-sm text-purple-200">Professional tasks</div>
-                </div>
-                <div className="w-8 h-8 bg-purple-500 rounded"></div>
-              </button>
-              
-              <button
-                onClick={() => createPlant('selfcare')}
-                className="flex items-center justify-between p-4 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 rounded-lg text-white transition-colors"
-              >
-                <div className="text-left">
-                  <div className="font-medium">Self-care Salad</div>
-                  <div className="text-sm text-green-200">Health and wellness</div>
-                </div>
-                <div className="w-8 h-8 bg-green-500 rounded"></div>
-              </button>
-              
-              <button
-                onClick={() => createPlant('creative')}
-                className="flex items-center justify-between p-4 bg-yellow-600/20 hover:bg-yellow-600/30 border border-yellow-500/30 rounded-lg text-white transition-colors"
-              >
-                <div className="text-left">
-                  <div className="font-medium">Creative Pumpkin</div>
-                  <div className="text-sm text-yellow-200">Arts and creativity</div>
-                </div>
-                <div className="w-8 h-8 bg-yellow-500 rounded"></div>
-              </button>
+              <div>
+                <label className="block text-white text-sm font-medium mb-2">Category</label>
+                <select
+                  value={plantForm.category}
+                  onChange={(e) => setPlantForm({...plantForm, category: e.target.value})}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="" className="bg-gray-800">Select category...</option>
+                  {PLANT_CATEGORIES.map(cat => (
+                    <option key={cat.value} value={cat.value} className="bg-gray-800">
+                      {cat.label} - {cat.description}
+                    </option>
+                  ))}
+                </select>
+                {plantForm.category && (
+                  <p className="text-green-200 text-xs mt-1">
+                    A random {PLANT_CATEGORIES.find(c => c.value === plantForm.category)?.label.toLowerCase()} plant will be chosen
+                  </p>
+                )}
+              </div>
             </div>
             
-            <button
-              onClick={() => {
-                setShowPlantSelector(false)
-                setPendingPlantPosition(null)
-              }}
-              className="w-full mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
-            >
-              Cancel
-            </button>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={cancelPlantCreation}
+                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createPlant}
+                disabled={!isFormValid}
+                className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                  isFormValid 
+                    ? 'bg-green-600 hover:bg-green-700 text-white' 
+                    : 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                }`}
+              >
+                Create Plant
+              </button>
+            </div>
           </motion.div>
+        </div>
+      )}
+      
+      {loading && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+            <div className="flex items-center space-x-3">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-400"></div>
+              <span className="text-white">Loading plants...</span>
+            </div>
+          </div>
         </div>
       )}
     </div>

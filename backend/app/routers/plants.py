@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer
 from typing import List
-from app.services.auth import get_current_user_id
+from app.services.auth import get_current_user_id, get_authenticated_supabase
 from app.services.plant_service import PlantService
 from app.models.plant import PlantCreate, PlantUpdate, PlantResponse, PlantCareCreate, PlantCareResponse, UserProgressResponse
 
@@ -13,21 +13,21 @@ async def create_plant(
     plant_data: PlantCreate,
     credentials = Depends(security)
 ):
-    user_id = await get_current_user_id(credentials)
-    return await PlantService.create_plant(user_id, plant_data)
+    auth_supabase, user_id = await get_authenticated_supabase(credentials)
+    return await PlantService.create_plant(user_id, plant_data, auth_supabase)
 
 @router.get("/", response_model=List[PlantResponse])
 async def get_plants(credentials = Depends(security)):
-    user_id = await get_current_user_id(credentials)
-    return await PlantService.get_user_plants(user_id)
+    auth_supabase, user_id = await get_authenticated_supabase(credentials)
+    return await PlantService.get_user_plants(user_id, auth_supabase)
 
 @router.get("/{plant_id}", response_model=PlantResponse)
 async def get_plant(
     plant_id: str,
     credentials = Depends(security)
 ):
-    user_id = await get_current_user_id(credentials)
-    return await PlantService.get_plant_by_id(user_id, plant_id)
+    auth_supabase, user_id = await get_authenticated_supabase(credentials)
+    return await PlantService.get_plant_by_id(user_id, plant_id, auth_supabase)
 
 @router.put("/{plant_id}", response_model=PlantResponse)
 async def update_plant(
@@ -54,11 +54,11 @@ async def care_for_plant(
     care_data: PlantCareCreate,
     credentials = Depends(security)
 ):
-    user_id = await get_current_user_id(credentials)
-    return await PlantService.care_for_plant(user_id, care_data)
+    auth_supabase, user_id = await get_authenticated_supabase(credentials)
+    return await PlantService.care_for_plant(user_id, care_data, auth_supabase)
 
 @router.get("/progress/me", response_model=UserProgressResponse)
 async def get_user_progress(credentials = Depends(security)):
-    user_id = await get_current_user_id(credentials)
-    return await PlantService.get_user_progress(user_id)
+    auth_supabase, user_id = await get_authenticated_supabase(credentials)
+    return await PlantService.get_user_progress(user_id, auth_supabase)
 

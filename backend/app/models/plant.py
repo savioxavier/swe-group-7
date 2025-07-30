@@ -25,13 +25,15 @@ class DecayStatus(str, Enum):
 class PlantCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     plant_type: PlantType
+    plant_sprite: str = Field(..., min_length=1, max_length=50)
     position_x: int = Field(..., ge=0, le=10)
-    position_y: int = Field(..., ge=0, le=10)
+    position_y: int = Field(..., ge=0, le=6)
 
 class PlantUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    plant_sprite: Optional[str] = Field(None, min_length=1, max_length=50)
     position_x: Optional[int] = Field(None, ge=0, le=10)
-    position_y: Optional[int] = Field(None, ge=0, le=10)
+    position_y: Optional[int] = Field(None, ge=0, le=6)
     is_active: Optional[bool] = None
 
 class PlantResponse(BaseModel):
@@ -39,6 +41,7 @@ class PlantResponse(BaseModel):
     user_id: str
     name: str
     plant_type: PlantType
+    plant_sprite: str
     growth_level: int
     experience_points: int
     position_x: int

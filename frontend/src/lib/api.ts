@@ -1,6 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-import { LoginData, RegisterData, AuthResponse, RegistrationResponse } from '../types'
+import { LoginData, RegisterData, AuthResponse, RegistrationResponse, PlantCreate, PlantResponse, PlantCareCreate, PlantCareResponse, UserProgressResponse } from '../types'
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -46,7 +46,9 @@ async function apiRequest<T>(
       throw new ApiError(response.status, errorMessage)
     }
     
-    throw new ApiError(response.status, error.detail || 'Request failed')
+    // Handle different error formats
+    const errorMessage = error.detail || error.message || JSON.stringify(error) || `HTTP ${response.status} error`
+    throw new ApiError(response.status, errorMessage)
   }
 
   return response.json()
@@ -114,6 +116,31 @@ export const api = {
       method: 'DELETE',
       headers: getAuthHeaders(),
     })
+  },
+
+  // Plant API methods
+  async createPlant(plantData: PlantCreate): Promise<PlantResponse> {
+    return this.post<PlantResponse>('/plants', plantData)
+  },
+
+  async getPlants(): Promise<PlantResponse[]> {
+    return this.get<PlantResponse[]>('/plants')
+  },
+
+  async getPlant(plantId: string): Promise<PlantResponse> {
+    return this.get<PlantResponse>(`/plants/${plantId}`)
+  },
+
+  async deletePlant(plantId: string): Promise<{message: string}> {
+    return this.delete<{message: string}>(`/plants/${plantId}`)
+  },
+
+  async careForPlant(careData: PlantCareCreate): Promise<PlantCareResponse> {
+    return this.post<PlantCareResponse>('/plants/care', careData)
+  },
+
+  async getUserProgress(): Promise<UserProgressResponse> {
+    return this.get<UserProgressResponse>('/plants/progress/me')
   },
 }
 

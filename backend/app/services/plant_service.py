@@ -7,12 +7,14 @@ from fastapi import HTTPException
 class PlantService:
     
     @staticmethod
-    async def create_plant(user_id: str, plant_data: PlantCreate) -> PlantResponse:
+    async def create_plant(user_id: str, plant_data: PlantCreate, auth_supabase=None) -> PlantResponse:
+        client = auth_supabase or supabase
         try:
-            result = supabase.table("plants").insert({
+            result = client.table("plants").insert({
                 "user_id": user_id,
                 "name": plant_data.name,
                 "plant_type": plant_data.plant_type,
+                "plant_sprite": plant_data.plant_sprite,
                 "position_x": plant_data.position_x,
                 "position_y": plant_data.position_y,
                 "growth_level": 0,
@@ -34,17 +36,20 @@ class PlantService:
             raise HTTPException(status_code=400, detail=f"Failed to create plant: {str(e)}")
     
     @staticmethod
-    async def get_user_plants(user_id: str) -> List[PlantResponse]:
+    async def get_user_plants(user_id: str, auth_supabase=None) -> List[PlantResponse]:
+        client = auth_supabase or supabase
         try:
-            result = supabase.table("plants").select("*").eq("user_id", user_id).eq("is_active", True).execute()
+            result = client.table("plants").select("*").eq("user_id", user_id).eq("is_active", True).execute()
             
             plants = []
             for plant_dict in result.data:
-                # Handle missing decay fields for backwards compatibility
+                # Handle missing fields for backwards compatibility
                 if 'decay_status' not in plant_dict:
                     plant_dict['decay_status'] = DecayStatus.HEALTHY.value
                 if 'days_without_care' not in plant_dict:
                     plant_dict['days_without_care'] = 0
+                if 'plant_sprite' not in plant_dict:
+                    plant_dict['plant_sprite'] = 'carrot'  # Default sprite
                 plants.append(PlantResponse(**plant_dict))
             
             return plants
@@ -53,19 +58,22 @@ class PlantService:
             raise HTTPException(status_code=500, detail=f"Failed to fetch plants: {str(e)}")
     
     @staticmethod
-    async def get_plant_by_id(user_id: str, plant_id: str) -> PlantResponse:
+    async def get_plant_by_id(user_id: str, plant_id: str, auth_supabase=None) -> PlantResponse:
+        client = auth_supabase or supabase
         try:
-            result = supabase.table("plants").select("*").eq("id", plant_id).eq("user_id", user_id).execute()
+            result = client.table("plants").select("*").eq("id", plant_id).eq("user_id", user_id).execute()
             
             if not result.data:
                 raise HTTPException(status_code=404, detail="Plant not found")
             
             plant_dict = result.data[0]
-            # Handle missing decay fields for backwards compatibility
+            # Handle missing fields for backwards compatibility
             if 'decay_status' not in plant_dict:
                 plant_dict['decay_status'] = DecayStatus.HEALTHY.value
             if 'days_without_care' not in plant_dict:
                 plant_dict['days_without_care'] = 0
+            if 'plant_sprite' not in plant_dict:
+                plant_dict['plant_sprite'] = 'carrot'  # Default sprite
             return PlantResponse(**plant_dict)
             
         except HTTPException:
@@ -79,6 +87,8 @@ class PlantService:
             update_data = {}
             if plant_data.name is not None:
                 update_data["name"] = plant_data.name
+            if plant_data.plant_sprite is not None:
+                update_data["plant_sprite"] = plant_data.plant_sprite
             if plant_data.position_x is not None:
                 update_data["position_x"] = plant_data.position_x
             if plant_data.position_y is not None:
@@ -120,13 +130,14 @@ class PlantService:
             raise HTTPException(status_code=500, detail=f"Failed to delete plant: {str(e)}")
     
     @staticmethod
-    async def care_for_plant(user_id: str, care_data: PlantCareCreate) -> PlantCareResponse:
+    async def care_for_plant(user_id: str, care_data: PlantCareCreate, auth_supabase=None) -> PlantCareResponse:
+        client = auth_supabase or supabase
         try:
-            plant = await PlantService.get_plant_by_id(user_id, care_data.plant_id)
+            plant = await PlantService.get_plant_by_id(user_id, care_data.plant_id, auth_supabase)
             
             experience_gained = PlantService._calculate_care_experience(care_data.care_type)
             
-            care_result = supabase.table("plant_care_log").insert({
+            care_result = client.table("plant_care_log").insert({
                 "plant_id": care_data.plant_id,
                 "user_id": user_id,
                 "care_type": care_data.care_type,
@@ -139,7 +150,7 @@ class PlantService:
             new_experience = plant.experience_points + experience_gained
             new_growth = min(100, (new_experience // 10))
             
-            supabase.table("plants").update({
+            client.table("plants").update({
                 "experience_points": new_experience,
                 "growth_level": new_growth
             }).eq("id", care_data.plant_id).execute()
@@ -381,9 +392,10 @@ class PlantService:
             print(f"Error updating daily plant decay: {str(e)}")
     
     @staticmethod
-    async def get_user_progress(user_id: str) -> UserProgressResponse:
+    async def get_user_progress(user_id: str, auth_supabase=None) -> UserProgressResponse:
+        client = auth_supabase or supabase
         try:
-            result = supabase.table("user_progress").select("*").eq("user_id", user_id).execute()
+            result = client.table("user_progress").select("*").eq("user_id", user_id).execute()
             
             if not result.data:
                 default_progress = {
