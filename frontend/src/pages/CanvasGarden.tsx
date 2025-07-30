@@ -13,14 +13,6 @@ interface Plant {
   lastWatered: Date
 }
 
-const mockPlants: Plant[] = [
-  { id: '1', name: 'Exercise Carrot', type: 'exercise', x: 0, y: 0, stage: 4, lastWatered: new Date() },
-  { id: '2', name: 'Study Tomato', type: 'study', x: 1, y: 0, stage: 3, lastWatered: new Date() },
-  { id: '3', name: 'Work Wheat', type: 'work', x: 3, y: 1, stage: 2, lastWatered: new Date() },
-  { id: '4', name: 'Self-care Cauliflower', type: 'selfcare', x: 6, y: 1, stage: 5, lastWatered: new Date() },
-  { id: '5', name: 'Creative Sunflower', type: 'creative', x: 7, y: 2, stage: 1, lastWatered: new Date() }
-]
-
 const GRID_WIDTH = 11
 const GRID_HEIGHT = 7  
 const CELL_SIZE = 80
@@ -32,6 +24,15 @@ const PLANT_SPRITE_MAP: Record<string, string> = {
   selfcare: 'salad',
   creative: 'pumpkin'
 }
+
+const mockPlants: Plant[] = [
+  { id: '1', name: 'Exercise Carrot', type: 'exercise', x: 0, y: 0, stage: 4, lastWatered: new Date() },
+  { id: '2', name: 'Study Tomato', type: 'study', x: 1, y: 0, stage: 3, lastWatered: new Date() },
+  { id: '3', name: 'Work Wheat', type: 'work', x: 3, y: 1, stage: 2, lastWatered: new Date() },
+  { id: '4', name: 'Self-care Cauliflower', type: 'selfcare', x: 6, y: 1, stage: 5, lastWatered: new Date() },
+  { id: '5', name: 'Creative Sunflower', type: 'creative', x: 7, y: 2, stage: 1, lastWatered: new Date() }
+]
+
 
 const getPlantSprite = (plantType: string, stage: number): string => {
   const spriteType = PLANT_SPRITE_MAP[plantType] || 'carrot'
@@ -159,7 +160,7 @@ export default function CanvasGarden() {
           ctx.stroke()
         }
       }
-    } catch (error) {
+    } catch {
       ctx.fillStyle = '#4ade80'
       ctx.fillRect(0, 0, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE)
     }
@@ -190,7 +191,7 @@ export default function CanvasGarden() {
           }
         })
       }
-    } catch (error) {
+    } catch {
       plants.forEach(plant => {
         const plantX = plant.x * CELL_SIZE
         const plantY = plant.y * CELL_SIZE
@@ -243,7 +244,7 @@ export default function CanvasGarden() {
           ctx.arc(centerX, centerY, 16 + plant.stage * 4, 0, 2 * Math.PI)
           ctx.fill()
         }
-      } catch (error) {
+      } catch {
         ctx.fillStyle = getPlantColor(plant.type)
         ctx.beginPath()
         ctx.arc(centerX, centerY, 16 + plant.stage * 4, 0, 2 * Math.PI)
@@ -424,7 +425,7 @@ export default function CanvasGarden() {
         for (const stage of stages) {
           try {
             await getPlantSpriteImage(type, stage)
-          } catch (error) {
+          } catch {
             console.warn(`Failed to preload sprite for ${type} stage ${stage}`)
           }
         }
