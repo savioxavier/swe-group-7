@@ -31,7 +31,7 @@ export interface RegistrationResponse {
 
 export interface PlantCreate {
   name: string
-  plant_type: 'exercise' | 'study' | 'work' | 'selfcare' | 'creative'
+  productivity_category: 'work' | 'study' | 'exercise' | 'creative'
   plant_sprite: string
   position_x: number
   position_y: number
@@ -41,30 +41,36 @@ export interface PlantResponse {
   id: string
   user_id: string
   name: string
-  plant_type: 'exercise' | 'study' | 'work' | 'selfcare' | 'creative'
+  plant_type?: 'exercise' | 'study' | 'work' | 'selfcare' | 'creative'
+  productivity_category?: 'work' | 'study' | 'exercise' | 'creative'
   plant_sprite: string
   growth_level: number
   experience_points: number
+  task_level?: number
   position_x: number
   position_y: number
   is_active: boolean
-  decay_status?: string
+  decay_status?: 'healthy' | 'slightly_wilted' | 'wilted' | 'severely_wilted' | 'dead'
   days_without_care?: number
+  last_worked_date?: string
+  current_streak?: number
   created_at: string
   updated_at: string
 }
 
-export interface PlantCareCreate {
+
+export interface TaskWorkCreate {
   plant_id: string
-  care_type: 'water' | 'fertilize' | 'task_complete'
+  hours_worked: number
 }
 
-export interface PlantCareResponse {
+export interface TaskWorkResponse {
   id: string
   plant_id: string
   user_id: string
-  care_type: string
+  hours_worked: number
   experience_gained: number
+  description?: string
   created_at: string
 }
 

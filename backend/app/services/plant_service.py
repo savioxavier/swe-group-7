@@ -1,7 +1,7 @@
 from typing import List, Optional
 from datetime import datetime, date
 from app.config import supabase
-from app.models.plant import PlantCreate, PlantUpdate, PlantResponse, PlantCareCreate, PlantCareResponse, UserProgressResponse, CareType, DecayStatus
+from app.models.plant import PlantCreate, PlantUpdate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse, ProductivityCategory, PlantType, DecayStatus
 from fastapi import HTTPException
 
 class PlantService:
@@ -10,10 +10,10 @@ class PlantService:
     async def create_plant(user_id: str, plant_data: PlantCreate, auth_supabase=None) -> PlantResponse:
         client = auth_supabase or supabase
         try:
-            result = client.table("plants").insert({
+            # Handle both old plant_type and new productivity_category
+            insert_data = {
                 "user_id": user_id,
                 "name": plant_data.name,
-                "plant_type": plant_data.plant_type,
                 "plant_sprite": plant_data.plant_sprite,
                 "position_x": plant_data.position_x,
                 "position_y": plant_data.position_y,
@@ -22,7 +22,14 @@ class PlantService:
                 "is_active": True,
                 "decay_status": DecayStatus.HEALTHY.value,
                 "days_without_care": 0
-            }).execute()
+            }
+            
+            if hasattr(plant_data, 'productivity_category') and plant_data.productivity_category:
+                insert_data["plant_type"] = plant_data.productivity_category
+            elif hasattr(plant_data, 'plant_type') and plant_data.plant_type:
+                insert_data["plant_type"] = plant_data.plant_type
+                
+            result = client.table("plants").insert(insert_data).execute()
             
             if not result.data:
                 raise HTTPException(status_code=400, detail="Failed to create plant")
@@ -43,13 +50,20 @@ class PlantService:
             
             plants = []
             for plant_dict in result.data:
-                # Handle missing fields for backwards compatibility
                 if 'decay_status' not in plant_dict:
                     plant_dict['decay_status'] = DecayStatus.HEALTHY.value
                 if 'days_without_care' not in plant_dict:
                     plant_dict['days_without_care'] = 0
                 if 'plant_sprite' not in plant_dict:
-                    plant_dict['plant_sprite'] = 'carrot'  # Default sprite
+                    plant_dict['plant_sprite'] = 'carrot'
+                
+                if 'productivity_category' not in plant_dict and 'plant_type' not in plant_dict:
+                    plant_dict['plant_type'] = PlantType.WORK.value
+                
+                plant_dict['task_level'] = PlantService._calculate_task_level(plant_dict.get('experience_points', 0))
+                plant_dict['current_streak'] = PlantService._calculate_streak_from_updated_at_dict(plant_dict)
+                plant_dict['last_worked_date'] = plant_dict.get('updated_at')
+                    
                 plants.append(PlantResponse(**plant_dict))
             
             return plants
@@ -129,53 +143,166 @@ class PlantService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to delete plant: {str(e)}")
     
+    
     @staticmethod
-    async def care_for_plant(user_id: str, care_data: PlantCareCreate, auth_supabase=None) -> PlantCareResponse:
+    async def log_task_work(user_id: str, work_data: TaskWorkCreate, auth_supabase=None) -> dict:
         client = auth_supabase or supabase
         try:
-            plant = await PlantService.get_plant_by_id(user_id, care_data.plant_id, auth_supabase)
+            plant = await PlantService.get_plant_by_id(user_id, work_data.plant_id, auth_supabase)
+            if not plant:
+                raise HTTPException(status_code=404, detail="Plant not found")
             
-            experience_gained = PlantService._calculate_care_experience(care_data.care_type)
-            
-            care_result = client.table("plant_care_log").insert({
-                "plant_id": care_data.plant_id,
-                "user_id": user_id,
-                "care_type": care_data.care_type,
-                "experience_gained": experience_gained
-            }).execute()
-            
-            if not care_result.data:
-                raise HTTPException(status_code=400, detail="Failed to log plant care")
-            
+            experience_gained = int(work_data.hours_worked * 100)
             new_experience = plant.experience_points + experience_gained
-            new_growth = min(100, (new_experience // 10))
+            new_task_level = PlantService._calculate_task_level(new_experience)
+            new_growth = new_task_level * 20
             
-            client.table("plants").update({
+            from datetime import date
+            today = date.today()
+            current_streak = PlantService._calculate_streak_from_updated_at(plant, today)
+            update_result = client.table("plants").update({
                 "experience_points": new_experience,
-                "growth_level": new_growth
-            }).eq("id", care_data.plant_id).execute()
+                "growth_level": min(100, new_growth)
+            }).eq("id", work_data.plant_id).eq("user_id", user_id).execute()
             
-            # Reset decay status when plant is cared for
-            await PlantService.reset_plant_decay(user_id, care_data.plant_id)
+            if not update_result.data:
+                raise HTTPException(status_code=400, detail="Failed to update plant")
             
             await PlantService._update_user_progress(user_id, experience_gained)
             
-            care_dict = care_result.data[0]
-            return PlantCareResponse(**care_dict)
+            from datetime import datetime
+            now = datetime.now()
+            return {
+                "id": f"work_{work_data.plant_id}_{now.isoformat()}",
+                "plant_id": work_data.plant_id,
+                "user_id": user_id,
+                "hours_worked": work_data.hours_worked,
+                "experience_gained": experience_gained,
+                "new_task_level": new_task_level,
+                "new_growth_level": min(100, new_growth),
+                "current_streak": current_streak,
+                "last_worked_date": today.isoformat(),
+                "created_at": now.isoformat()
+            }
             
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to care for plant: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to log task work: {str(e)}")
     
     @staticmethod
-    def _calculate_care_experience(care_type: CareType) -> int:
-        experience_map = {
-            CareType.WATER: 5,
-            CareType.FERTILIZE: 10,
-            CareType.TASK_COMPLETE: 15
-        }
-        return experience_map.get(care_type, 5)
+    def _calculate_task_level(experience_points: int) -> int:
+        if experience_points <= 0:
+            return 1
+        
+        level = 1
+        xp_needed = 100
+        total_xp_used = 0
+        
+        while total_xp_used + xp_needed <= experience_points:
+            total_xp_used += xp_needed
+            level += 1
+            xp_needed = 100 + (20 * level)
+        
+        return level
+    
+    @staticmethod
+    def _calculate_streak_from_updated_at(plant, today):
+        if not plant.updated_at:
+            return 1
+        
+        try:
+            if isinstance(plant.updated_at, str):
+                last_update_date = date.fromisoformat(plant.updated_at.split('T')[0])
+            else:
+                last_update_date = plant.updated_at.date() if hasattr(plant.updated_at, 'date') else plant.updated_at
+            
+            days_diff = (today - last_update_date).days
+            
+            if days_diff == 0:
+                return 1
+            elif days_diff == 1:
+                return 2
+            else:
+                return 1
+        except:
+            return 1
+    
+    @staticmethod
+    def _calculate_streak_from_updated_at_dict(plant_dict):
+        updated_at = plant_dict.get('updated_at')
+        if not updated_at:
+            return 0
+        
+        try:
+            from datetime import date
+            today = date.today()
+            if isinstance(updated_at, str):
+                last_update_date = date.fromisoformat(updated_at.split('T')[0])
+            else:
+                last_update_date = updated_at.date() if hasattr(updated_at, 'date') else updated_at
+            
+            days_diff = (today - last_update_date).days
+            
+            if days_diff == 0:
+                return 1
+            elif days_diff == 1:
+                return 1
+            else:
+                return 0
+        except:
+            return 0
+    
+    @staticmethod
+    async def apply_daily_decay(user_id: str, auth_supabase=None):
+        """Apply daily XP decay: 20 * task_level per day, reduced by streak protection"""
+        client = auth_supabase or supabase
+        try:
+            plants = await PlantService.get_user_plants(user_id, auth_supabase)
+            today = date.today()
+            
+            for plant in plants:
+                if not plant.last_worked_date:
+                    continue
+                
+                last_worked = plant.last_worked_date.date() if isinstance(plant.last_worked_date, datetime) else date.fromisoformat(str(plant.last_worked_date))
+                days_since_work = (today - last_worked).days
+                
+                if days_since_work <= 0:
+                    continue  # Worked today, no decay
+                
+                # Calculate daily decay: 20 * task_level
+                daily_decay = 20 * plant.task_level
+                
+                # Streak protection: each streak day prevents 20 XP loss
+                streak_protection = min(plant.current_streak or 0, plant.task_level) * 20
+                actual_decay = max(0, daily_decay - streak_protection)
+                
+                # Apply decay for each missed day
+                total_decay = actual_decay * days_since_work
+                new_experience = max(0, plant.experience_points - total_decay)
+                new_task_level = PlantService._calculate_task_level(new_experience)
+                new_growth = min(100, (new_experience // 50))
+                
+                # Update decay status
+                new_days_without_care = (plant.days_without_care or 0) + days_since_work
+                decay_status = PlantService._calculate_decay_status(new_days_without_care)
+                
+                # Reset streak if more than 1 day missed
+                new_streak = 0 if days_since_work > 1 else plant.current_streak
+                
+                client.table("plants").update({
+                    "experience_points": new_experience,
+                    "task_level": new_task_level,
+                    "growth_level": new_growth,
+                    "days_without_care": new_days_without_care,
+                    "decay_status": decay_status.value,
+                    "current_streak": new_streak,
+                    "is_active": decay_status != DecayStatus.DEAD
+                }).eq("id", plant.id).execute()
+                
+        except Exception as e:
+            print(f"Error applying daily decay: {str(e)}")
     
     @staticmethod
     async def _update_user_progress(user_id: str, experience_gained: int):
@@ -441,3 +568,30 @@ class PlantService:
             
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to award experience: {str(e)}")
+    
+    @staticmethod
+    async def harvest_plant(user_id: str, plant_id: str, auth_supabase=None) -> dict:
+        """Harvest a mature plant - removes the plant"""
+        client = auth_supabase or supabase
+        try:
+            # Get the plant first to verify it exists and can be harvested
+            plant = await PlantService.get_plant_by_id(user_id, plant_id, auth_supabase)
+            
+            # Check if plant is mature enough to harvest (stage 4+)
+            plant_stage = min(5, plant.growth_level // 20)
+            if plant_stage < 4:
+                raise HTTPException(status_code=400, detail="Plant is not mature enough to harvest")
+            
+            # Remove the plant (soft delete)
+            result = client.table("plants").update({"is_active": False}).eq("id", plant_id).eq("user_id", user_id).execute()
+            
+            if not result.data:
+                raise HTTPException(status_code=404, detail="Plant not found")
+            
+            return {"message": "Plant harvested successfully", "experience_gained": 0}
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to harvest plant: {str(e)}")
+    

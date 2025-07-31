@@ -165,7 +165,6 @@ class TaskService:
     
     @staticmethod
     async def get_task_by_id(task_id: str, user_id: str) -> Optional[TaskResponse]:
-        """Get a specific task by ID for the authenticated user"""
         response = supabase.table("tasks").select("*").eq("id", task_id).eq("user_id", user_id).execute()
         
         if not response.data:
@@ -190,7 +189,6 @@ class TaskService:
     
     @staticmethod
     async def get_task_time_logs(task_id: str) -> List[TimeLogResponse]:
-        """Get all time logs for a specific task"""
         response = supabase.table("task_time_logs").select("*").eq("task_id", task_id).order("date", desc=True).execute()
         
         time_logs = []

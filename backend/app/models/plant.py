@@ -4,16 +4,16 @@ from datetime import datetime
 from enum import Enum
 
 class PlantType(str, Enum):
-    EXERCISE = "exercise"
-    STUDY = "study"
     WORK = "work"
-    SELFCARE = "selfcare"
+    STUDY = "study"
+    EXERCISE = "exercise"
     CREATIVE = "creative"
 
-class CareType(str, Enum):
-    WATER = "water"
-    FERTILIZE = "fertilize"
-    TASK_COMPLETE = "task_complete"
+class ProductivityCategory(str, Enum):
+    WORK = "work"
+    STUDY = "study"
+    EXERCISE = "exercise"
+    CREATIVE = "creative"
 
 class DecayStatus(str, Enum):
     HEALTHY = "healthy"
@@ -24,7 +24,7 @@ class DecayStatus(str, Enum):
 
 class PlantCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    plant_type: PlantType
+    productivity_category: ProductivityCategory
     plant_sprite: str = Field(..., min_length=1, max_length=50)
     position_x: int = Field(..., ge=0, le=10)
     position_y: int = Field(..., ge=0, le=6)
@@ -40,28 +40,34 @@ class PlantResponse(BaseModel):
     id: str
     user_id: str
     name: str
-    plant_type: PlantType
+    plant_type: Optional[PlantType] = None
+    productivity_category: Optional[ProductivityCategory] = None
     plant_sprite: str
     growth_level: int
     experience_points: int
+    task_level: Optional[int] = 1
     position_x: int
     position_y: int
     is_active: bool
     decay_status: Optional[DecayStatus] = DecayStatus.HEALTHY
     days_without_care: Optional[int] = 0
+    last_worked_date: Optional[datetime] = None
+    current_streak: Optional[int] = 0
     created_at: datetime
     updated_at: datetime
 
-class PlantCareCreate(BaseModel):
-    plant_id: str
-    care_type: CareType
 
-class PlantCareResponse(BaseModel):
+class TaskWorkCreate(BaseModel):
+    plant_id: str
+    hours_worked: float = Field(..., gt=0, le=24)
+
+class TaskWorkResponse(BaseModel):
     id: str
     plant_id: str
     user_id: str
-    care_type: CareType
+    hours_worked: float
     experience_gained: int
+    description: Optional[str] = None
     created_at: datetime
 
 class UserProgressResponse(BaseModel):

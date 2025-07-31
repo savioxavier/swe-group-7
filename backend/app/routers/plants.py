@@ -3,7 +3,7 @@ from fastapi.security import HTTPBearer
 from typing import List
 from app.services.auth import get_current_user_id, get_authenticated_supabase
 from app.services.plant_service import PlantService
-from app.models.plant import PlantCreate, PlantUpdate, PlantResponse, PlantCareCreate, PlantCareResponse, UserProgressResponse
+from app.models.plant import PlantCreate, PlantUpdate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse
 
 router = APIRouter()
 security = HTTPBearer()
@@ -49,16 +49,24 @@ async def delete_plant(
         return {"message": "Plant deleted successfully"}
     raise HTTPException(status_code=400, detail="Failed to delete plant")
 
-@router.post("/care", response_model=PlantCareResponse)
-async def care_for_plant(
-    care_data: PlantCareCreate,
+@router.post("/work")
+async def log_task_work(
+    work_data: TaskWorkCreate,
     credentials = Depends(security)
 ):
     auth_supabase, user_id = await get_authenticated_supabase(credentials)
-    return await PlantService.care_for_plant(user_id, care_data, auth_supabase)
+    return await PlantService.log_task_work(user_id, work_data, auth_supabase)
 
 @router.get("/progress/me", response_model=UserProgressResponse)
 async def get_user_progress(credentials = Depends(security)):
     auth_supabase, user_id = await get_authenticated_supabase(credentials)
     return await PlantService.get_user_progress(user_id, auth_supabase)
+
+@router.post("/{plant_id}/harvest")
+async def harvest_plant(
+    plant_id: str,
+    credentials = Depends(security)
+):
+    auth_supabase, user_id = await get_authenticated_supabase(credentials)
+    return await PlantService.harvest_plant(user_id, plant_id, auth_supabase)
 

@@ -1,6 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-import { LoginData, RegisterData, AuthResponse, RegistrationResponse, PlantCreate, PlantResponse, PlantCareCreate, PlantCareResponse, UserProgressResponse } from '../types'
+import { LoginData, RegisterData, AuthResponse, RegistrationResponse, PlantCreate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse } from '../types'
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -24,19 +24,12 @@ async function apiRequest<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Network error' }))
-    
-    // Handle token expiration and authentication errors
     if (response.status === 401 || response.status === 403) {
-      // Clear stored auth data
       localStorage.removeItem('token')
       localStorage.removeItem('user')
-      
-      // Redirect to login page
       window.location.href = '/signin'
-      
       throw new ApiError(response.status, 'Session expired. Please log in again.')
     }
-    
     if (response.status === 422) {
       const errorMessage = error.detail ? 
         (Array.isArray(error.detail) ? 
@@ -45,8 +38,6 @@ async function apiRequest<T>(
         'Validation failed'
       throw new ApiError(response.status, errorMessage)
     }
-    
-    // Handle different error formats
     const errorMessage = error.detail || error.message || JSON.stringify(error) || `HTTP ${response.status} error`
     throw new ApiError(response.status, errorMessage)
   }
@@ -118,7 +109,6 @@ export const api = {
     })
   },
 
-  // Plant API methods
   async createPlant(plantData: PlantCreate): Promise<PlantResponse> {
     return this.post<PlantResponse>('/plants', plantData)
   },
@@ -135,12 +125,16 @@ export const api = {
     return this.delete<{message: string}>(`/plants/${plantId}`)
   },
 
-  async careForPlant(careData: PlantCareCreate): Promise<PlantCareResponse> {
-    return this.post<PlantCareResponse>('/plants/care', careData)
+  async logTaskWork(workData: TaskWorkCreate): Promise<TaskWorkResponse> {
+    return this.post<TaskWorkResponse>('/plants/work', workData)
   },
 
   async getUserProgress(): Promise<UserProgressResponse> {
     return this.get<UserProgressResponse>('/plants/progress/me')
+  },
+
+  async harvestPlant(plantId: string): Promise<{message: string, experience_gained: number}> {
+    return this.post<{message: string, experience_gained: number}>(`/plants/${plantId}/harvest`)
   },
 }
 

@@ -1,17 +1,20 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { Plus, Leaf, Settings, LogOut, User, Zap, Info, BarChart3 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { api } from '../lib/api'
-import { PlantCreate, PlantResponse, PlantCareCreate, UserProgressResponse } from '../types'
+import { PlantCreate, PlantResponse, UserProgressResponse, TaskWorkResponse } from '../types'
 
 interface Plant {
   id: string
   name: string
-  type: 'exercise' | 'study' | 'work' | 'selfcare' | 'creative'
+  type: 'work' | 'study' | 'exercise' | 'creative'
   x: number
   y: number
   stage: number
+  experience_points: number
+  growth_level: number
   lastWatered: Date
   plantSprite?: string
 }
@@ -21,19 +24,17 @@ const GRID_HEIGHT = 7
 const CELL_SIZE = 80
 
 const CATEGORY_PLANTS: Record<string, string[]> = {
-  exercise: ['carrot', 'beet', 'radish'],
-  study: ['tomat', 'eggplant', 'pepper'],
-  work: ['corn', 'wheat', 'peas', 'potato'],
-  selfcare: ['cabbage', 'salad', 'spinach'],
-  creative: ['cucumber', 'pumpkin', 'watermelon', 'onion']
+  work: ['corn', 'wheat', 'potato', 'onion'],
+  study: ['cabbage', 'spinach', 'salad', 'peas'],
+  exercise: ['carrot', 'beet', 'radish', 'cucumber'],
+  creative: ['tomat', 'eggplant', 'pepper', 'pumpkin', 'watermelon']
 }
 
-const PLANT_CATEGORIES = [
-  { value: 'exercise', label: 'Exercise', description: 'Physical activity tasks' },
+const PRODUCTIVITY_CATEGORIES = [
+  { value: 'work', label: 'Work', description: 'Professional and business tasks' },
   { value: 'study', label: 'Study', description: 'Learning and education' },
-  { value: 'work', label: 'Work', description: 'Professional tasks' },
-  { value: 'selfcare', label: 'Self-care', description: 'Health and wellness' },
-  { value: 'creative', label: 'Creative', description: 'Arts and creativity' }
+  { value: 'exercise', label: 'Exercise', description: 'Physical fitness and health' },
+  { value: 'creative', label: 'Creative', description: 'Arts and creative projects' }
 ]
 
 const getRandomPlantForCategory = (category: string): string => {
@@ -69,13 +70,26 @@ const getPlantSprite = (plant: Plant, stage: number): string => {
   return `/assets/Sprites/${spriteType}/${spriteType}_${spriteStage}.png`
 }
 
+const getXpRequiredForNextGrowth = (plant: Plant): { xpNeeded: number, nextStage: number, currentStageProgress: number } => {
+  const currentStage = plant.stage
+  const nextStage = Math.min(currentStage + 1, 5)
+  const xpPerStage = 200
+  const nextStageXpRequired = (nextStage * 20) * 10
+  const xpNeeded = Math.max(0, nextStageXpRequired - plant.experience_points)
+  const currentStageStartXp = currentStage * xpPerStage
+  const currentStageProgress = Math.max(0, plant.experience_points - currentStageStartXp)
+  return { xpNeeded, nextStage, currentStageProgress }
+}
+
 const convertApiPlantToLocal = (apiPlant: PlantResponse): Plant => ({
   id: apiPlant.id,
   name: apiPlant.name,
-  type: apiPlant.plant_type,
+  type: (apiPlant.productivity_category || apiPlant.plant_type || 'work') as Plant['type'],
   x: apiPlant.position_x,
   y: apiPlant.position_y,
   stage: Math.floor(apiPlant.growth_level / 20),
+  experience_points: apiPlant.experience_points,
+  growth_level: apiPlant.growth_level,
   lastWatered: new Date(apiPlant.updated_at),
   plantSprite: apiPlant.plant_sprite
 })
@@ -97,6 +111,8 @@ export default function CanvasGarden() {
     name: '',
     category: ''
   })
+  const [showHoursInput, setShowHoursInput] = useState(false)
+  const [hoursWorked, setHoursWorked] = useState('')
   const [loadedSprites, setLoadedSprites] = useState<Map<string, HTMLImageElement>>(new Map())
 
   const loadSprite = useCallback((spritePath: string): Promise<HTMLImageElement> => {
@@ -128,15 +144,20 @@ export default function CanvasGarden() {
     }
   }, [loadSprite])
 
-  const getPlantColor = (type: string): string => {
+  const getPlantColor = (category: string): string => {
     const colors: Record<string, string> = {
+      coding: '#3b82f6',
+      writing: '#8b5cf6',
       exercise: '#ef4444',
-      study: '#3b82f6',
-      work: '#8b5cf6',
-      selfcare: '#10b981',
-      creative: '#f59e0b'
+      learning: '#10b981',
+      work: '#6b7280',
+      creative: '#f59e0b',
+      reading: '#06b6d4',
+      music: '#ec4899',
+      language: '#84cc16',
+      business: '#eab308'
     }
-    return colors[type] || '#6b7280'
+    return colors[category] || '#6b7280'
   }
 
   const drawGarden = useCallback(async () => {
@@ -158,19 +179,16 @@ export default function CanvasGarden() {
             const tileY = y * CELL_SIZE
             
             ctx.fillStyle = '#2d5016'
-            
             if (x < GRID_WIDTH - 1) {
               for (let i = 8; i < CELL_SIZE - 8; i += 8) {
                 ctx.fillRect(tileX + CELL_SIZE - 2, tileY + i, 4, 4)
               }
             }
-            
             if (y < GRID_HEIGHT - 1) {
               for (let i = 8; i < CELL_SIZE - 8; i += 8) {
                 ctx.fillRect(tileX + i, tileY + CELL_SIZE - 2, 4, 4)
               }
             }
-            
             if (x < GRID_WIDTH - 1 && y < GRID_HEIGHT - 1) {
               ctx.fillRect(tileX + CELL_SIZE - 2, tileY + CELL_SIZE - 2, 4, 4)
             }
@@ -208,19 +226,16 @@ export default function CanvasGarden() {
           ctx.drawImage(dirtImg, plantX, plantY, CELL_SIZE, CELL_SIZE)
           
           ctx.fillStyle = '#5d4037'
-          
           if (plant.x < GRID_WIDTH - 1) {
             for (let i = 8; i < CELL_SIZE - 8; i += 8) {
               ctx.fillRect(plantX + CELL_SIZE - 2, plantY + i, 4, 4)
             }
           }
-          
           if (plant.y < GRID_HEIGHT - 1) {
             for (let i = 8; i < CELL_SIZE - 8; i += 8) {
               ctx.fillRect(plantX + i, plantY + CELL_SIZE - 2, 4, 4)
             }
           }
-          
           if (plant.x < GRID_WIDTH - 1 && plant.y < GRID_HEIGHT - 1) {
             ctx.fillRect(plantX + CELL_SIZE - 2, plantY + CELL_SIZE - 2, 4, 4)
           }
@@ -234,19 +249,16 @@ export default function CanvasGarden() {
         ctx.fillRect(plantX, plantY, CELL_SIZE, CELL_SIZE)
         
         ctx.fillStyle = '#5d4037'
-        
         if (plant.x < GRID_WIDTH - 1) {
           for (let i = 8; i < CELL_SIZE - 8; i += 8) {
             ctx.fillRect(plantX + CELL_SIZE - 2, plantY + i, 4, 4)
           }
         }
-        
         if (plant.y < GRID_HEIGHT - 1) {
           for (let i = 8; i < CELL_SIZE - 8; i += 8) {
             ctx.fillRect(plantX + i, plantY + CELL_SIZE - 2, 4, 4)
           }
         }
-        
         if (plant.x < GRID_WIDTH - 1 && plant.y < GRID_HEIGHT - 1) {
           ctx.fillRect(plantX + CELL_SIZE - 2, plantY + CELL_SIZE - 2, 4, 4)
         }
@@ -310,25 +322,17 @@ export default function CanvasGarden() {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
         ctx.fillRect(cellX, cellY, CELL_SIZE, CELL_SIZE)
         
-        // Plant name at the top (remove type prefix)
         ctx.fillStyle = '#ffffff'
         ctx.font = 'bold 10px Arial'
         ctx.textAlign = 'center'
-        
         const plantNameOnly = plant.name.replace(/^(Exercise|Study|Work|Self-care|Creative)\s+/i, '')
         const shortName = plantNameOnly.length > 12 ? plantNameOnly.substring(0, 10) + '...' : plantNameOnly
         ctx.fillText(shortName, cellX + CELL_SIZE/2, cellY + 15)
-        
-        // Stage info
         ctx.fillStyle = '#00ff88'
         ctx.font = '9px Arial'
         ctx.fillText(`${Math.floor((plant.stage / 5) * 100)}%`, cellX + CELL_SIZE/2, cellY + 30)
-        
-        // Type info at the bottom
         ctx.fillStyle = '#88ccff'
         ctx.fillText(plant.type.toUpperCase(), cellX + CELL_SIZE/2, cellY + 45)
-        
-        // Reset text alignment
         ctx.textAlign = 'left'
       }
     }
@@ -401,47 +405,48 @@ export default function CanvasGarden() {
     }
   }
 
-  const waterPlant = async () => {
-    if (!selectedPlant) return
-    
+
+  const workOnTask = async () => {
+    if (!selectedPlant || !hoursWorked) return
     try {
-      const careData: PlantCareCreate = {
-        plant_id: selectedPlant.id,
-        care_type: 'water'
+      const hours = parseFloat(hoursWorked)
+      if (hours <= 0 || hours > 24) {
+        alert('Please enter a valid number of hours (0.1 - 24)')
+        return
       }
-      
-      await api.careForPlant(careData)
-      
+      const workData = { plant_id: selectedPlant.id, hours_worked: hours }
+      await api.logTaskWork(workData)
       await loadPlants()
       await loadUserProgress()
+      setHoursWorked('')
+      setShowHoursInput(false)
       const updatedPlant = plants.find(p => p.id === selectedPlant.id)
       if (updatedPlant) {
         setSelectedPlant(updatedPlant)
       }
     } catch (error) {
-      console.error('Failed to water plant:', error)
-      alert('Failed to water plant. Please try again.')
+      console.error('Failed to log work:', error)
+      alert('Failed to log work. Please try again.')
     }
   }
 
+
   const harvestPlant = async () => {
     if (!selectedPlant || selectedPlant.stage < 4) return
-    
     try {
-      const careData: PlantCareCreate = {
-        plant_id: selectedPlant.id,
-        care_type: 'task_complete'
-      }
-      
-      await api.careForPlant(careData)
-      await api.deletePlant(selectedPlant.id)
+      await api.harvestPlant(selectedPlant.id)
       await loadPlants()
       await loadUserProgress()
-      
       setSelectedPlant(null)
     } catch (error) {
       console.error('Failed to harvest plant:', error)
-      alert('Failed to harvest plant. Please try again.')
+      if (error instanceof Error && error.message.includes('Plant not found')) {
+        alert('Plant not found. It may have already been harvested.')
+      } else if (error instanceof Error && error.message.includes('not mature enough')) {
+        alert('Plant is not mature enough to harvest yet.')
+      } else {
+        alert('Failed to harvest plant. Please try again.')
+      }
     }
   }
 
@@ -451,15 +456,13 @@ export default function CanvasGarden() {
         const selectedSprite = getRandomPlantForCategory(plantForm.category)
         const plantData: PlantCreate = {
           name: plantForm.name.trim(),
-          plant_type: plantForm.category as 'exercise' | 'study' | 'work' | 'selfcare' | 'creative',
+          productivity_category: plantForm.category as 'coding' | 'writing' | 'exercise' | 'learning' | 'work' | 'creative' | 'reading' | 'music' | 'language' | 'business',
           plant_sprite: selectedSprite,
           position_x: pendingPlantPosition.x,
           position_y: pendingPlantPosition.y
         }
-        
         const apiPlant = await api.createPlant(plantData)
         const newPlant = convertApiPlantToLocal(apiPlant)
-        
         setPlants([...plants, newPlant])
         setShowPlantCreator(false)
         setPendingPlantPosition(null)
@@ -508,6 +511,7 @@ export default function CanvasGarden() {
     loadPlants()
     loadUserProgress()
   }, [loadPlants, loadUserProgress])
+
 
   useEffect(() => {
     drawGarden()
@@ -620,22 +624,24 @@ export default function CanvasGarden() {
                   </button>
                   
                   <button
-                    onClick={waterPlant}
+                    onClick={() => setShowHoursInput(!showHoursInput)}
                     disabled={!selectedPlant}
-                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors"
+                    className="px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:opacity-50 text-white rounded-md font-medium transition-colors"
                   >
-                    Water
+                    I worked on this today!
                   </button>
                   
-                  <button
-                    onClick={harvestPlant}
-                    disabled={!selectedPlant || selectedPlant.stage < 4}
-                    className="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-600 disabled:opacity-50 text-white rounded-md text-sm font-medium transition-colors"
-                  >
-                    Harvest
-                  </button>
+                  {selectedPlant && selectedPlant.stage >= 4 && (
+                    <button
+                      onClick={harvestPlant}
+                      className="px-4 py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md font-medium transition-colors"
+                    >
+                      Harvest Plant
+                    </button>
+                  )}
                 </div>
               )}
+
 
               <div className="flex items-center space-x-2 text-white">
                 <div className="bg-white/10 px-3 py-2 rounded flex items-center space-x-1">
@@ -791,15 +797,27 @@ export default function CanvasGarden() {
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span className="text-gray-300">Category:</span>
-                          <span className="text-white capitalize">{selectedPlant.type}</span>
+                          <span className="text-white capitalize">{selectedPlant.productivity_category}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">Task Level:</span>
+                          <span className="text-white">{selectedPlant.task_level}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">Experience:</span>
+                          <span className="text-white">{selectedPlant.experience_points} XP</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-300">Streak:</span>
+                          <span className="text-white">{selectedPlant.current_streak} days</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-300">Position:</span>
                           <span className="text-white">({selectedPlant.x}, {selectedPlant.y})</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-gray-300">Last Watered:</span>
-                          <span className="text-white">{selectedPlant.lastWatered.toLocaleDateString()}</span>
+                          <span className="text-gray-300">Last Worked:</span>
+                          <span className="text-white">{selectedPlant.last_worked_date ? new Date(selectedPlant.last_worked_date).toLocaleDateString() : 'Never'}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-300">Status:</span>
@@ -813,30 +831,19 @@ export default function CanvasGarden() {
                         </div>
                       </div>
                     </div>
-
                     <div className="bg-white/5 rounded-lg p-4">
                       <h4 className="text-sm font-bold text-white mb-3">Care Tips</h4>
                       <div className="space-y-2 text-xs text-gray-300">
-                        {selectedPlant.stage < 4 ? (
-                          <>
-                            <p>• Water regularly to help growth</p>
-                            <p>• Plant will grow automatically over time</p>
-                            <p>• Each stage brings new visual changes</p>
-                          </>
-                        ) : (
-                          <>
-                            <p>• This plant is ready for harvest!</p>
-                            <p>• Harvesting will give you rewards</p>
-                            <p>• Use Plant Mode to harvest</p>
-                          </>
-                        )}
+                        <p>• Click "I worked on this today!" to log time</p>
+                        <p>• 1 hour = 100 XP</p>
+                        <p>• Work daily to maintain streaks</p>
+                        <p>• Harvest when fully grown!</p>
                       </div>
                     </div>
-
                     <div className="bg-white/5 rounded-lg p-4">
                       <h4 className="text-sm font-bold text-white mb-3">Similar Plants</h4>
                       <div className="text-xs text-gray-300">
-                        <p>{plants.filter(p => p.type === selectedPlant.type && p.id !== selectedPlant.id).length} other {selectedPlant.type} plants in garden</p>
+                        <p>{plants.filter(p => p.productivity_category === selectedPlant.productivity_category && p.id !== selectedPlant.id).length} other {selectedPlant.productivity_category} plants in garden</p>
                         <p>{plants.filter(p => p.stage === selectedPlant.stage && p.id !== selectedPlant.id).length} plants at same growth stage</p>
                       </div>
                     </div>
@@ -900,7 +907,7 @@ export default function CanvasGarden() {
                   className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
                 >
                   <option value="" className="bg-gray-800">Select category...</option>
-                  {PLANT_CATEGORIES.map(cat => (
+                  {PRODUCTIVITY_CATEGORIES.map(cat => (
                     <option key={cat.value} value={cat.value} className="bg-gray-800">
                       {cat.label} - {cat.description}
                     </option>
@@ -908,7 +915,7 @@ export default function CanvasGarden() {
                 </select>
                 {plantForm.category && (
                   <p className="text-green-200 text-xs mt-1">
-                    A random {PLANT_CATEGORIES.find(c => c.value === plantForm.category)?.label.toLowerCase()} plant will be chosen
+                    A random {PRODUCTIVITY_CATEGORIES.find(c => c.value === plantForm.category)?.label.toLowerCase()} plant will be chosen
                   </p>
                 )}
               </div>
@@ -946,6 +953,58 @@ export default function CanvasGarden() {
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Hours Input Modal - Rendered outside all containers using Portal */}
+      {showHoursInput && selectedPlant && createPortal(
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style={{ zIndex: 99999 }}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-xl p-6 border border-gray-200 w-80 shadow-2xl"
+          >
+            <h3 className="text-lg font-semibold text-gray-800 mb-4 text-center">
+              How many hours did you work?
+            </h3>
+            
+            <div className="space-y-4">
+              <input
+                type="number"
+                step="0.5"
+                min="0.5"
+                max="24"
+                value={hoursWorked}
+                onChange={(e) => setHoursWorked(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-800 text-center text-xl"
+                placeholder="2"
+                autoFocus
+              />
+              <p className="text-sm text-gray-600 text-center">
+                You'll earn {hoursWorked ? Math.round(parseFloat(hoursWorked) * 100) : 0} XP
+              </p>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={workOnTask}
+                  disabled={!hoursWorked}
+                  className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+                >
+                  Done!
+                </button>
+                <button
+                  onClick={() => {
+                    setShowHoursInput(false)
+                    setHoursWorked('')
+                  }}
+                  className="px-4 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>,
+        document.body
       )}
     </div>
   )
