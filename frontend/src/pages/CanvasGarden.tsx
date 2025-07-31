@@ -17,6 +17,9 @@ interface Plant {
   growth_level: number
   lastWatered: Date
   plantSprite?: string
+  decay_status?: 'healthy' | 'slightly_wilted' | 'wilted' | 'severely_wilted' | 'dead'
+  current_streak?: number
+  task_level?: number
 }
 
 const GRID_WIDTH = 11
@@ -91,7 +94,10 @@ const convertApiPlantToLocal = (apiPlant: PlantResponse): Plant => ({
   experience_points: apiPlant.experience_points,
   growth_level: apiPlant.growth_level,
   lastWatered: new Date(apiPlant.updated_at),
-  plantSprite: apiPlant.plant_sprite
+  plantSprite: apiPlant.plant_sprite,
+  decay_status: apiPlant.decay_status,
+  current_streak: apiPlant.current_streak,
+  task_level: apiPlant.task_level
 })
 
 export default function CanvasGarden() {
@@ -273,7 +279,17 @@ export default function CanvasGarden() {
         const spriteImg = await getPlantSpriteImage(plant, plant.stage)
         if (spriteImg) {
           ctx.save()
-          ctx.filter = 'contrast(1.3) saturate(1.2) brightness(1.1)'
+          
+          // Apply decay visual effects based on plant health
+          if (plant.decay_status === 'wilted') {
+            ctx.filter = 'contrast(0.8) saturate(0.6) brightness(0.9) sepia(0.3)'
+          } else if (plant.decay_status === 'severely_wilted') {
+            ctx.filter = 'contrast(0.6) saturate(0.3) brightness(0.7) sepia(0.6)'
+          } else if (plant.decay_status === 'dead') {
+            ctx.filter = 'contrast(0.4) saturate(0.1) brightness(0.5) grayscale(0.8)'
+          } else {
+            ctx.filter = 'contrast(1.3) saturate(1.2) brightness(1.1)'
+          }
           
           const spriteSize = Math.min(CELL_SIZE - 8, 52)
           ctx.drawImage(

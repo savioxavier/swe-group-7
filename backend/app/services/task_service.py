@@ -77,16 +77,7 @@ class TaskService:
         updated_task = response.data[0]
         
         plant_id = updated_task.get("plant_id")
-        if plant_id:
-            try:
-                await PlantService.award_task_completion_experience(user_id, plant_id)
-            except Exception:
-                pass
         
-        try:
-            await PlantService.update_user_streak(user_id)
-        except Exception:
-            pass
         
         return TaskResponse(
             id=updated_task["id"],
@@ -130,16 +121,7 @@ class TaskService:
         
         if task_update.status == TaskStatus.COMPLETED:
             plant_id = updated_task.get("plant_id")
-            if plant_id:
-                try:
-                    await PlantService.award_task_completion_experience(user_id, plant_id)
-                except Exception:
-                    pass
             
-            try:
-                await PlantService.update_user_streak(user_id)
-            except Exception:
-                pass
         
         return TaskResponse(
             id=updated_task["id"],

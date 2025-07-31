@@ -1,6 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-import { LoginData, RegisterData, AuthResponse, RegistrationResponse, PlantCreate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse } from '../types'
+import { LoginData, RegisterData, AuthResponse, RegistrationResponse, PlantCreate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse, AdminUser, SystemStats } from '../types'
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -135,6 +135,26 @@ export const api = {
 
   async harvestPlant(plantId: string): Promise<{message: string, experience_gained: number}> {
     return this.post<{message: string, experience_gained: number}>(`/plants/${plantId}/harvest`)
+  },
+
+  async getAdminUsers(): Promise<AdminUser[]> {
+    return this.get<AdminUser[]>('/admin/users')
+  },
+
+  async promoteUserToAdmin(userId: string): Promise<{message: string}> {
+    return this.post<{message: string}>(`/admin/users/${userId}/promote`)
+  },
+
+  async getSystemStats(): Promise<SystemStats> {
+    return this.get<SystemStats>('/admin/stats')
+  },
+
+  async deleteUser(userId: string): Promise<{message: string}> {
+    return this.delete<{message: string}>(`/admin/users/${userId}`)
+  },
+
+  async runManualDecay(): Promise<{message: string}> {
+    return this.post<{message: string}>('/admin/decay/run')
   },
 }
 

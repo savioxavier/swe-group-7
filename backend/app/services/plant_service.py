@@ -159,10 +159,33 @@ class PlantService:
             
             from datetime import date
             today = date.today()
-            current_streak = PlantService._calculate_streak_from_updated_at(plant, today)
+            
+            # Calculate new streak based on last work date
+            if plant.updated_at:
+                last_work_date = date.fromisoformat(plant.updated_at.split('T')[0]) if isinstance(plant.updated_at, str) else plant.updated_at.date()
+                days_since_work = (today - last_work_date).days
+                
+                if days_since_work == 0:
+                    # Worked today already, keep current streak
+                    new_streak = plant.current_streak or 1
+                elif days_since_work == 1:
+                    # Worked yesterday, increment streak
+                    new_streak = (plant.current_streak or 0) + 1
+                else:
+                    # Missed days, reset streak
+                    new_streak = 1
+            else:
+                new_streak = 1
+            
+            # Reset plant health when worked on (recovery from decay)
             update_result = client.table("plants").update({
                 "experience_points": new_experience,
-                "growth_level": min(100, new_growth)
+                "growth_level": min(100, new_growth),
+                "current_streak": new_streak,
+                "last_worked_date": today.isoformat(),
+                "days_without_care": 0,  # Reset decay counter
+                "decay_status": DecayStatus.HEALTHY.value,  # Restore health
+                "is_active": True  # Revive dead plants
             }).eq("id", work_data.plant_id).eq("user_id", user_id).execute()
             
             if not update_result.data:
@@ -180,7 +203,7 @@ class PlantService:
                 "experience_gained": experience_gained,
                 "new_task_level": new_task_level,
                 "new_growth_level": min(100, new_growth),
-                "current_streak": current_streak,
+                "current_streak": new_streak,
                 "last_worked_date": today.isoformat(),
                 "created_at": now.isoformat()
             }
@@ -262,14 +285,19 @@ class PlantService:
             today = date.today()
             
             for plant in plants:
+                # Handle new plants that have never been worked on
                 if not plant.last_worked_date:
-                    continue
-                
-                last_worked = plant.last_worked_date.date() if isinstance(plant.last_worked_date, datetime) else date.fromisoformat(str(plant.last_worked_date))
-                days_since_work = (today - last_worked).days
-                
-                if days_since_work <= 0:
-                    continue  # Worked today, no decay
+                    # New plants start decaying after 1 day of creation
+                    created_date = plant.created_at.date() if isinstance(plant.created_at, datetime) else date.fromisoformat(str(plant.created_at))
+                    days_since_work = (today - created_date).days
+                    if days_since_work <= 0:
+                        continue  # Created today, no decay yet
+                else:
+                    last_worked = plant.last_worked_date.date() if isinstance(plant.last_worked_date, datetime) else date.fromisoformat(str(plant.last_worked_date))
+                    days_since_work = (today - last_worked).days
+                    
+                    if days_since_work <= 0:
+                        continue  # Worked today, no decay
                 
                 # Calculate daily decay: 20 * task_level
                 daily_decay = 20 * plant.task_level
@@ -282,14 +310,23 @@ class PlantService:
                 total_decay = actual_decay * days_since_work
                 new_experience = max(0, plant.experience_points - total_decay)
                 new_task_level = PlantService._calculate_task_level(new_experience)
-                new_growth = min(100, (new_experience // 50))
+                new_growth = min(100, new_task_level * 20)
                 
-                # Update decay status
+                # Additional visual decay based on neglect
                 new_days_without_care = (plant.days_without_care or 0) + days_since_work
                 decay_status = PlantService._calculate_decay_status(new_days_without_care)
                 
-                # Reset streak if more than 1 day missed
-                new_streak = 0 if days_since_work > 1 else plant.current_streak
+                # Apply additional visual decay penalty
+                if decay_status == DecayStatus.WILTED:
+                    new_growth = max(0, new_growth - 20)  # Reduce by 1 stage
+                elif decay_status == DecayStatus.SEVERELY_WILTED:
+                    new_growth = max(0, new_growth - 40)  # Reduce by 2 stages
+                elif decay_status == DecayStatus.DEAD:
+                    new_growth = 0  # Plant appears dead
+                
+                # Reduce streak by number of missed days (but not below 0)
+                current_streak = plant.current_streak or 0
+                new_streak = max(0, current_streak - max(0, days_since_work - 1))
                 
                 client.table("plants").update({
                     "experience_points": new_experience,
@@ -335,89 +372,6 @@ class PlantService:
             pass
     
     @staticmethod
-    async def update_user_streak(user_id: str) -> dict:
-        """Update user streak based on daily task completion"""
-        try:
-            result = supabase.table("user_progress").select("*").eq("user_id", user_id).execute()
-            
-            if not result.data:
-                await PlantService._update_user_progress(user_id, 0)
-                return {"current_streak": 1, "longest_streak": 1, "streak_updated": True}
-            
-            progress = result.data[0]
-            today = date.today()
-            last_activity = progress.get("last_activity_date")
-            
-            if last_activity:
-                last_date = date.fromisoformat(last_activity)
-                days_diff = (today - last_date).days
-                
-                if days_diff == 0:
-                    return {"current_streak": progress["current_streak"], "longest_streak": progress["longest_streak"], "streak_updated": False}
-                elif days_diff == 1:
-                    new_streak = progress["current_streak"] + 1
-                    new_longest = max(progress["longest_streak"], new_streak)
-                else:
-                    new_streak = 1
-                    new_longest = progress["longest_streak"]
-                    await PlantService._apply_streak_penalty(user_id, days_diff)
-            else:
-                new_streak = 1
-                new_longest = max(progress["longest_streak"], 1)
-            
-            supabase.table("user_progress").update({
-                "current_streak": new_streak,
-                "longest_streak": new_longest,
-                "last_activity_date": today.isoformat()
-            }).eq("user_id", user_id).execute()
-            
-            return {"current_streak": new_streak, "longest_streak": new_longest, "streak_updated": True}
-            
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to update streak: {str(e)}")
-    
-    @staticmethod
-    async def _apply_streak_penalty(user_id: str, days_missed: int):
-        """Apply penalties for missed days - implements plant decay logic"""
-        try:
-            penalty_severity = min(days_missed, 7)
-            
-            # Get all user's active plants
-            plants_result = supabase.table("plants").select("*").eq("user_id", user_id).eq("is_active", True).execute()
-            
-            for plant_data in plants_result.data:
-                plant_id = plant_data["id"]
-                current_growth = plant_data["growth_level"]
-                current_exp = plant_data["experience_points"]
-                current_days_without_care = plant_data.get("days_without_care", 0)
-                
-                # Calculate decay effects
-                new_days_without_care = current_days_without_care + days_missed
-                growth_decay = min(penalty_severity * 5, current_growth // 2)  # Max 50% growth loss
-                exp_penalty = min(penalty_severity * 10, current_exp // 4)     # Max 25% exp loss
-                
-                new_growth = max(0, current_growth - growth_decay)
-                new_exp = max(0, current_exp - exp_penalty)
-                
-                # Determine decay status based on days without care
-                decay_status = PlantService._calculate_decay_status(new_days_without_care)
-                
-                # Apply decay to plant
-                supabase.table("plants").update({
-                    "growth_level": new_growth,
-                    "experience_points": new_exp,
-                    "days_without_care": new_days_without_care,
-                    "decay_status": decay_status.value,
-                    "is_active": decay_status != DecayStatus.DEAD
-                }).eq("id", plant_id).execute()
-            
-            # Apply experience penalty to user progress
-            await PlantService._apply_user_experience_penalty(user_id, penalty_severity)
-            
-        except Exception as e:
-            print(f"Error applying streak penalty: {str(e)}")
-    
-    @staticmethod
     def _calculate_decay_status(days_without_care: int) -> DecayStatus:
         """Calculate plant decay status based on days without care"""
         if days_without_care <= 1:
@@ -430,93 +384,6 @@ class PlantService:
             return DecayStatus.SEVERELY_WILTED
         else:
             return DecayStatus.DEAD
-    
-    @staticmethod
-    async def _apply_user_experience_penalty(user_id: str, penalty_severity: int):
-        """Apply experience penalty to user progress"""
-        try:
-            result = supabase.table("user_progress").select("*").eq("user_id", user_id).execute()
-            
-            if result.data:
-                progress = result.data[0]
-                current_exp = progress["total_experience"]
-                exp_penalty = min(penalty_severity * 20, current_exp // 10)  # Max 10% exp loss
-                new_exp = max(0, current_exp - exp_penalty)
-                new_level = max(1, (new_exp // 100) + 1)
-                
-                supabase.table("user_progress").update({
-                    "total_experience": new_exp,
-                    "level": new_level
-                }).eq("user_id", user_id).execute()
-                
-        except Exception:
-            pass
-    
-    @staticmethod
-    async def reset_plant_decay(user_id: str, plant_id: str):
-        """Reset plant decay when user completes tasks - called on plant care"""
-        try:
-            supabase.table("plants").update({
-                "days_without_care": 0,
-                "decay_status": DecayStatus.HEALTHY.value
-            }).eq("id", plant_id).eq("user_id", user_id).execute()
-            
-        except Exception:
-            pass
-    
-    @staticmethod
-    async def check_and_update_daily_streaks():
-        """Check all users for missed streaks and apply penalties - daily cron job"""
-        try:
-            today = date.today()
-            yesterday = today.replace(day=today.day - 1)
-            
-            # Get all users who haven't been active today
-            result = supabase.table("user_progress").select("*").lt("last_activity_date", today.isoformat()).execute()
-            
-            for user_progress in result.data:
-                user_id = user_progress["user_id"]
-                last_activity = user_progress.get("last_activity_date")
-                
-                if last_activity:
-                    last_date = date.fromisoformat(last_activity)
-                    days_missed = (today - last_date).days
-                    
-                    if days_missed > 0:
-                        # Reset current streak and apply penalties
-                        supabase.table("user_progress").update({
-                            "current_streak": 0
-                        }).eq("user_id", user_id).execute()
-                        
-                        # Apply decay penalties to plants
-                        await PlantService._apply_streak_penalty(user_id, days_missed)
-                        
-                        # Update plants' days_without_care for gradual decay
-                        await PlantService._update_plants_daily_decay(user_id, days_missed)
-            
-        except Exception as e:
-            print(f"Error in daily streak check: {str(e)}")
-    
-    @staticmethod
-    async def _update_plants_daily_decay(user_id: str, days_missed: int):
-        """Update plants daily decay counter for gradual visual decay"""
-        try:
-            plants_result = supabase.table("plants").select("*").eq("user_id", user_id).eq("is_active", True).execute()
-            
-            for plant_data in plants_result.data:
-                plant_id = plant_data["id"]
-                current_days = plant_data.get("days_without_care", 0)
-                new_days = current_days + days_missed
-                new_decay_status = PlantService._calculate_decay_status(new_days)
-                
-                supabase.table("plants").update({
-                    "days_without_care": new_days,
-                    "decay_status": new_decay_status.value,
-                    "is_active": new_decay_status != DecayStatus.DEAD
-                }).eq("id", plant_id).execute()
-                
-        except Exception as e:
-            print(f"Error updating daily plant decay: {str(e)}")
     
     @staticmethod
     async def get_user_progress(user_id: str, auth_supabase=None) -> UserProgressResponse:
@@ -545,29 +412,6 @@ class PlantService:
             
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch user progress: {str(e)}")
-    
-    @staticmethod
-    async def award_task_completion_experience(user_id: str, plant_id: Optional[str] = None) -> int:
-        try:
-            experience_gained = 20
-            
-            if plant_id:
-                care_data = PlantCareCreate(plant_id=plant_id, care_type=CareType.TASK_COMPLETE)
-                await PlantService.care_for_plant(user_id, care_data)
-            
-            result = supabase.table("user_progress").select("*").eq("user_id", user_id).execute()
-            
-            if result.data:
-                progress = result.data[0]
-                supabase.table("user_progress").update({
-                    "tasks_completed": progress["tasks_completed"] + 1,
-                    "last_activity_date": date.today().isoformat()
-                }).eq("user_id", user_id).execute()
-            
-            return experience_gained
-            
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to award experience: {str(e)}")
     
     @staticmethod
     async def harvest_plant(user_id: str, plant_id: str, auth_supabase=None) -> dict:

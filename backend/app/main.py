@@ -1,8 +1,22 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import tasks, plants, users
+from contextlib import asynccontextmanager
+from .routers import tasks, plants, users, admin
+from .services.scheduler_service import scheduler_service
+import logging
 
-app = FastAPI(title="Task Garden API", version="1.0.0")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("Starting up TaskGarden API...")
+    scheduler_service.start()
+    yield
+    logger.info("Shutting down TaskGarden API...")
+    scheduler_service.shutdown()
+
+app = FastAPI(title="Task Garden API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,6 +29,7 @@ app.add_middleware(
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(plants.router, prefix="/api/plants", tags=["plants"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
 @app.get("/")
 async def root():

@@ -2,6 +2,7 @@ export interface User {
   id: string
   email: string
   username?: string
+  role?: 'user' | 'admin'
   created_at: string
 }
 
@@ -86,4 +87,25 @@ export interface UserProgressResponse {
   last_activity_date: string | null
   created_at: string
   updated_at: string
+}
+
+export interface AdminUser {
+  id: string
+  email: string
+  username?: string
+  role: 'user' | 'admin'
+  total_plants: number
+  total_experience: number
+  current_level: number
+  last_activity?: string
+  created_at: string
+}
+
+export interface SystemStats {
+  total_users: number
+  total_plants: number
+  total_tasks: number
+  total_experience: number
+  avg_experience_per_user: number
+  last_updated: string
 }

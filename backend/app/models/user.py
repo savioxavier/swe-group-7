@@ -1,6 +1,11 @@
 from pydantic import BaseModel, EmailStr, validator
 from typing import Optional
 from datetime import datetime
+from enum import Enum
+
+class UserRole(str, Enum):
+    USER = "user"
+    ADMIN = "admin"
 
 class UserRegister(BaseModel):
     email: EmailStr
@@ -21,6 +26,7 @@ class UserResponse(BaseModel):
     id: str
     email: str
     username: Optional[str] = None
+    role: UserRole = UserRole.USER
     created_at: datetime
 
 class Token(BaseModel):
@@ -46,3 +52,14 @@ class UserProgressResponse(BaseModel):
     plants_grown: int
     last_activity_date: Optional[datetime] = None
     updated_at: datetime
+
+class AdminUserListResponse(BaseModel):
+    id: str
+    email: str
+    username: Optional[str] = None
+    role: UserRole
+    total_plants: int
+    total_experience: int
+    current_level: int
+    last_activity: Optional[datetime] = None
+    created_at: datetime
