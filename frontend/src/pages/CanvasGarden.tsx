@@ -148,7 +148,7 @@ export default function CanvasGarden() {
   );
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null);
   const [isPlanting, setIsPlanting] = useState(false);
-  const [mode, setMode] = useState<"plant" | "info" | "garden">("plant");
+  const [mode, setMode] = useState<"plant" | "info" | "garden">("info");
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(
     null
   );
@@ -167,6 +167,8 @@ export default function CanvasGarden() {
   const [loadedSprites, setLoadedSprites] = useState<
     Map<string, HTMLImageElement>
   >(new Map());
+  const [showPlantConfirmation, setShowPlantConfirmation] = useState(false);
+  const [tempPlantData, setTempPlantData] = useState<PlantCreate | null>(null);
 
   const loadSprite = useCallback(
     (spritePath: string): Promise<HTMLImageElement> => {
@@ -513,23 +515,18 @@ export default function CanvasGarden() {
     if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
       const clickedPlant = plants.find((p) => p.x === gridX && p.y === gridY);
 
-      if (mode === "plant") {
-        if (isPlanting) {
-          if (!clickedPlant) {
-            setPendingPlantPosition({ x: gridX, y: gridY });
-            setShowPlantCreator(true);
-            setPlantForm({ name: "", category: "" });
-          }
-          setIsPlanting(false);
-        } else if (clickedPlant) {
-          setSelectedPlant(clickedPlant);
-        } else {
-          setSelectedPlant(null);
-        }
-      } else if (mode === "info") {
-        setSelectedPlant(clickedPlant || null);
+      if (clickedPlant) {
+        // clicking on a plant = select it and show info
+        setSelectedPlant(clickedPlant);
+        setMode("info");
+      } else {
+        // clicking on empty space = open plant creator directly
+        setPendingPlantPosition({ x: gridX, y: gridY });
+        setShowPlantCreator(true);
+        setPlantForm({ name: "", category: "" });
+        setSelectedPlant(null);
       }
-    } else if (!isPlanting) {
+    } else {
       setSelectedPlant(null);
     }
   };
@@ -587,37 +584,54 @@ export default function CanvasGarden() {
         const plantData: PlantCreate = {
           name: plantForm.name.trim(),
           productivity_category: plantForm.category as
-            | "coding"
-            | "writing"
-            | "exercise"
-            | "learning"
             | "work"
-            | "creative"
-            | "reading"
-            | "music"
-            | "language"
-            | "business",
+            | "study"
+            | "exercise"
+            | "creative",
           plant_sprite: selectedSprite,
           position_x: pendingPlantPosition.x,
           position_y: pendingPlantPosition.y,
         };
-        const apiPlant = await api.createPlant(plantData);
-        const newPlant = convertApiPlantToLocal(apiPlant);
-        setPlants([...plants, newPlant]);
+
+        console.log(plantData);
+
+        setTempPlantData(plantData);
+        setShowPlantConfirmation(true);
         setShowPlantCreator(false);
-        setPendingPlantPosition(null);
-        setPlantForm({ name: "", category: "" });
       } catch (error) {
-        console.error("Failed to create plant:", error);
+        console.error("Failed to prepare plant data:", error);
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
-        alert(`Failed to create plant: ${errorMessage}`);
+        alert(`Failed to prepare plant data: ${errorMessage}`);
       }
+    }
+  };
+
+  const confirmCreatePlant = async () => {
+    if (!tempPlantData) return;
+
+    try {
+      const apiPlant = await api.createPlant(tempPlantData);
+      const newPlant = convertApiPlantToLocal(apiPlant);
+      setPlants([...plants, newPlant]);
+      setShowPlantConfirmation(false);
+      setTempPlantData(null);
+      setPendingPlantPosition(null);
+      setPlantForm({ name: "", category: "" });
+    } catch (error) {
+      console.error("Failed to create plant:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      alert(`Failed to create plant: ${errorMessage}`);
+      setShowPlantConfirmation(false);
+      setTempPlantData(null);
     }
   };
 
   const cancelPlantCreation = () => {
     setShowPlantCreator(false);
+    setShowPlantConfirmation(false);
+    setTempPlantData(null);
     setPendingPlantPosition(null);
     setPlantForm({ name: "", category: "" });
   };
@@ -675,6 +689,8 @@ export default function CanvasGarden() {
               x: 0,
               y: 0,
               stage,
+              experience_points: 0,
+              growth_level: 0,
               lastWatered: new Date(),
               plantSprite,
             };
@@ -760,23 +776,11 @@ export default function CanvasGarden() {
                 </button>
               </div>
 
-              {mode === "plant" && (
+              {mode === "plant" && selectedPlant && (
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
                   <button
-                    onClick={() => setIsPlanting(!isPlanting)}
-                    className={`px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors ${
-                      isPlanting
-                        ? "bg-green-600 text-white"
-                        : "bg-white/10 text-white hover:bg-white/20"
-                    }`}
-                  >
-                    {isPlanting ? "Cancel" : "Add Plant"}
-                  </button>
-
-                  <button
                     onClick={() => setShowHoursInput(!showHoursInput)}
-                    disabled={!selectedPlant}
-                    className="px-3 sm:px-4 py-2 sm:py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:opacity-50 text-white rounded-md font-medium transition-colors text-xs sm:text-sm"
+                    className="px-3 sm:px-4 py-2 sm:py-3 bg-green-600 hover:bg-green-700 text-white rounded-md font-medium transition-colors text-xs sm:text-sm"
                   >
                     <span className="hidden sm:inline">
                       I worked on this today!
@@ -784,7 +788,7 @@ export default function CanvasGarden() {
                     <span className="sm:hidden">Work Today!</span>
                   </button>
 
-                  {selectedPlant && selectedPlant.stage >= 4 && (
+                  {selectedPlant.stage >= 4 && (
                     <button
                       onClick={harvestPlant}
                       className="px-3 sm:px-4 py-2 sm:py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md font-medium transition-colors text-xs sm:text-sm"
@@ -957,195 +961,269 @@ export default function CanvasGarden() {
           ) : (
             <div
               className={`flex flex-col lg:flex-row h-full p-2 sm:p-4 transition-all duration-300 justify-center ${
-                selectedPlant && mode === "info" ? "lg:pr-2" : ""
+                mode === "info" ? "lg:pr-2" : ""
               }`}
             >
-              {selectedPlant && mode === "info" && (
+              {mode === "info" && (
                 <motion.div
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   className="w-full lg:w-80 mb-4 lg:mb-0 lg:mr-6 bg-white/10 backdrop-blur-md rounded-xl p-4 sm:p-6 border border-white/20 overflow-y-auto max-h-64 lg:max-h-none"
                 >
-                  <div className="text-center mb-4 sm:mb-6">
-                    <div
-                      className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full mx-auto mb-2 sm:mb-3 flex items-center justify-center ${
-                        selectedPlant.type === "exercise"
-                          ? "bg-red-500"
-                          : selectedPlant.type === "study"
-                          ? "bg-blue-500"
-                          : selectedPlant.type === "work"
-                          ? "bg-purple-500"
-                          : selectedPlant.type === "creative"
-                          ? "bg-yellow-500"
-                          : "bg-green-500"
-                      }`}
-                    >
-                      <span className="text-lg sm:text-2xl text-white font-bold">
-                        {selectedPlant.name
-                          .replace(
+                  {selectedPlant ? (
+                    <>
+                      <div className="text-center mb-4 sm:mb-6">
+                        <div
+                          className={`w-12 h-12 sm:w-16 sm:h-16 rounded-full mx-auto mb-2 sm:mb-3 flex items-center justify-center ${
+                            selectedPlant.type === "exercise"
+                              ? "bg-red-500"
+                              : selectedPlant.type === "study"
+                              ? "bg-blue-500"
+                              : selectedPlant.type === "work"
+                              ? "bg-purple-500"
+                              : selectedPlant.type === "creative"
+                              ? "bg-yellow-500"
+                              : "bg-green-500"
+                          }`}
+                        >
+                          <span className="text-lg sm:text-2xl text-white font-bold">
+                            {selectedPlant.name
+                              .replace(
+                                /^(Exercise|Study|Work|Self-care|Creative)\s+/i,
+                                ""
+                              )
+                              .charAt(0)}
+                          </span>
+                        </div>
+                        <h3 className="text-lg sm:text-xl font-bold text-white mb-1">
+                          {selectedPlant.name.replace(
                             /^(Exercise|Study|Work|Self-care|Creative)\s+/i,
                             ""
-                          )
-                          .charAt(0)}
-                      </span>
-                    </div>
-                    <h3 className="text-lg sm:text-xl font-bold text-white mb-1">
-                      {selectedPlant.name.replace(
-                        /^(Exercise|Study|Work|Self-care|Creative)\s+/i,
-                        ""
-                      )}
-                    </h3>
-                    <p className="text-xs sm:text-sm text-green-100 capitalize">
-                      {selectedPlant.type} Plant
-                    </p>
-                  </div>
+                          )}
+                        </h3>
+                        <p className="text-xs sm:text-sm text-green-100 capitalize">
+                          {selectedPlant.type} Plant
+                        </p>
+                      </div>
 
-                  <div className="mb-4 sm:mb-6">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-xs sm:text-sm font-medium text-white">
-                        Growth Progress
-                      </span>
-                      <span className="text-xs sm:text-sm text-green-100">
-                        {Math.floor((selectedPlant.stage / 5) * 100)}%
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div
-                        className={`h-2 rounded-full transition-all duration-300 ${
-                          selectedPlant.stage >= 4
-                            ? "bg-yellow-400"
-                            : "bg-green-400"
-                        }`}
-                        style={{ width: `${(selectedPlant.stage / 5) * 100}%` }}
-                      ></div>
-                    </div>
-                    <p className="text-xs text-gray-300 mt-1">
-                      {selectedPlant.stage === 0
-                        ? "Just planted"
-                        : selectedPlant.stage === 1
-                        ? "Sprouting"
-                        : selectedPlant.stage === 2
-                        ? "Growing"
-                        : selectedPlant.stage === 3
-                        ? "Developing"
-                        : selectedPlant.stage === 4
-                        ? "Ready to harvest"
-                        : "Fully grown"}
-                    </p>
-                  </div>
-
-                  <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
-                    <div className="bg-white/5 rounded-lg p-3 sm:p-4">
-                      <h4 className="text-xs sm:text-sm font-bold text-white mb-2 sm:mb-3">
-                        Plant Details
-                      </h4>
-                      <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-300">Category:</span>
-                          <span className="text-white capitalize">
-                            {selectedPlant.type}
+                      <div className="mb-4 sm:mb-6">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs sm:text-sm font-medium text-white">
+                            Growth Progress
+                          </span>
+                          <span className="text-xs sm:text-sm text-green-100">
+                            {Math.floor((selectedPlant.stage / 5) * 100)}%
                           </span>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-300">Task Level:</span>
-                          <span className="text-white">
-                            {selectedPlant.task_level}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-300">Experience:</span>
-                          <span className="text-white">
-                            {selectedPlant.experience_points} XP
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-300">Streak:</span>
-                          <span className="text-white">
-                            {selectedPlant.current_streak} days
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-300">Position:</span>
-                          <span className="text-white">
-                            ({selectedPlant.x}, {selectedPlant.y})
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-300">Last Worked:</span>
-                          <span className="text-white">
-                            {selectedPlant.lastWatered
-                              ? new Date(
-                                  selectedPlant.lastWatered
-                                ).toLocaleDateString()
-                              : "Never"}
-                          </span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-300">Status:</span>
-                          <span
-                            className={`font-medium ${
+                        <div className="w-full bg-gray-700 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full transition-all duration-300 ${
                               selectedPlant.stage >= 4
-                                ? "text-yellow-400"
-                                : selectedPlant.stage >= 2
-                                ? "text-green-400"
-                                : "text-gray-400"
+                                ? "bg-yellow-400"
+                                : "bg-green-400"
                             }`}
-                          >
-                            {selectedPlant.stage >= 4
-                              ? "Ready to harvest"
-                              : selectedPlant.stage >= 2
-                              ? "Healthy & growing"
-                              : "Young plant"}
-                          </span>
+                            style={{
+                              width: `${(selectedPlant.stage / 5) * 100}%`,
+                            }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-gray-300 mt-1">
+                          {selectedPlant.stage === 0
+                            ? "Just planted"
+                            : selectedPlant.stage === 1
+                            ? "Sprouting"
+                            : selectedPlant.stage === 2
+                            ? "Growing"
+                            : selectedPlant.stage === 3
+                            ? "Developing"
+                            : selectedPlant.stage === 4
+                            ? "Ready to harvest"
+                            : "Fully grown"}
+                        </p>
+                      </div>
+
+                      <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
+                        <div className="bg-white/5 rounded-lg p-3 sm:p-4">
+                          <h4 className="text-xs sm:text-sm font-bold text-white mb-2 sm:mb-3">
+                            Plant Details
+                          </h4>
+                          <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">Category:</span>
+                              <span className="text-white capitalize">
+                                {selectedPlant.type}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">Task Level:</span>
+                              <span className="text-white">
+                                {selectedPlant.task_level}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">Experience:</span>
+                              <span className="text-white">
+                                {selectedPlant.experience_points} XP
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">Streak:</span>
+                              <span className="text-white">
+                                {selectedPlant.current_streak} days
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">Position:</span>
+                              <span className="text-white">
+                                ({selectedPlant.x}, {selectedPlant.y})
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">
+                                Last Worked:
+                              </span>
+                              <span className="text-white">
+                                {selectedPlant.lastWatered
+                                  ? new Date(
+                                      selectedPlant.lastWatered
+                                    ).toLocaleDateString()
+                                  : "Never"}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">Status:</span>
+                              <span
+                                className={`font-medium ${
+                                  selectedPlant.stage >= 4
+                                    ? "text-yellow-400"
+                                    : selectedPlant.stage >= 2
+                                    ? "text-green-400"
+                                    : "text-gray-400"
+                                }`}
+                              >
+                                {selectedPlant.stage >= 4
+                                  ? "Ready to harvest"
+                                  : selectedPlant.stage >= 2
+                                  ? "Healthy & growing"
+                                  : "Young plant"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-3 sm:p-4">
+                          <h4 className="text-xs sm:text-sm font-bold text-white mb-2 sm:mb-3">
+                            Care Tips
+                          </h4>
+                          <div className="space-y-1 sm:space-y-2 text-xs text-gray-300">
+                            <p>• Click "I worked on this today!" to log time</p>
+                            <p>• 1 hour = 100 XP</p>
+                            <p>• Work daily to maintain streaks</p>
+                            <p>• Harvest when fully grown!</p>
+                          </div>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-3 sm:p-4">
+                          <h4 className="text-xs sm:text-sm font-bold text-white mb-2 sm:mb-3">
+                            Similar Plants
+                          </h4>
+                          <div className="text-xs text-gray-300">
+                            <p>
+                              {
+                                plants.filter(
+                                  (p) =>
+                                    p.type === selectedPlant.type &&
+                                    p.id !== selectedPlant.id
+                                ).length
+                              }{" "}
+                              other {selectedPlant.type} plants in garden
+                            </p>
+                            <p>
+                              {
+                                plants.filter(
+                                  (p) =>
+                                    p.stage === selectedPlant.stage &&
+                                    p.id !== selectedPlant.id
+                                ).length
+                              }{" "}
+                              plants at same growth stage
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="bg-white/5 rounded-lg p-3 sm:p-4">
-                      <h4 className="text-xs sm:text-sm font-bold text-white mb-2 sm:mb-3">
-                        Care Tips
-                      </h4>
-                      <div className="space-y-1 sm:space-y-2 text-xs text-gray-300">
-                        <p>• Click "I worked on this today!" to log time</p>
-                        <p>• 1 hour = 100 XP</p>
-                        <p>• Work daily to maintain streaks</p>
-                        <p>• Harvest when fully grown!</p>
-                      </div>
-                    </div>
-                    <div className="bg-white/5 rounded-lg p-3 sm:p-4">
-                      <h4 className="text-xs sm:text-sm font-bold text-white mb-2 sm:mb-3">
-                        Similar Plants
-                      </h4>
-                      <div className="text-xs text-gray-300">
-                        <p>
-                          {
-                            plants.filter(
-                              (p) =>
-                                p.type === selectedPlant.type &&
-                                p.id !== selectedPlant.id
-                            ).length
-                          }{" "}
-                          other {selectedPlant.type} plants in garden
-                        </p>
-                        <p>
-                          {
-                            plants.filter(
-                              (p) =>
-                                p.stage === selectedPlant.stage &&
-                                p.id !== selectedPlant.id
-                            ).length
-                          }{" "}
-                          plants at same growth stage
-                        </p>
-                      </div>
-                    </div>
-                  </div>
 
-                  <button
-                    onClick={() => setSelectedPlant(null)}
-                    className="w-full px-3 sm:px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors"
-                  >
-                    Close Details
-                  </button>
+                      <div className="space-y-2 sm:space-y-3">
+                        <button
+                          onClick={() => setShowHoursInput(!showHoursInput)}
+                          className="w-full px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors"
+                        >
+                          I worked on this today!
+                        </button>
+
+                        {selectedPlant.stage >= 4 && (
+                          <button
+                            onClick={harvestPlant}
+                            className="w-full px-3 sm:px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors"
+                          >
+                            Harvest Plant
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => setSelectedPlant(null)}
+                          className="w-full px-3 sm:px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs sm:text-sm font-medium transition-colors"
+                        >
+                          Close Details
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-center mb-4 sm:mb-6">
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full mx-auto mb-2 sm:mb-3 flex items-center justify-center bg-gray-500">
+                          <Leaf className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
+                        </div>
+                        <h3 className="text-lg sm:text-xl font-bold text-white mb-1">
+                          Select a Plant
+                        </h3>
+                        <p className="text-xs sm:text-sm text-green-100">
+                          Click on any plant to view details
+                        </p>
+                      </div>
+
+                      <div className="space-y-3 sm:space-y-4">
+                        <div className="bg-white/5 rounded-lg p-3 sm:p-4">
+                          <h4 className="text-xs sm:text-sm font-bold text-white mb-2 sm:mb-3">
+                            Garden Overview
+                          </h4>
+                          <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">
+                                Total Plants:
+                              </span>
+                              <span className="text-white">
+                                {plants.length}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">
+                                Ready to Harvest:
+                              </span>
+                              <span className="text-yellow-400">
+                                {plants.filter((p) => p.stage >= 4).length}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-gray-300">
+                                Fully Grown:
+                              </span>
+                              <span className="text-green-400">
+                                {plants.filter((p) => p.stage === 5).length}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </motion.div>
               )}
 
@@ -1204,6 +1282,7 @@ export default function CanvasGarden() {
                   placeholder="Enter plant name..."
                   className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm"
                   maxLength={100}
+                  autoFocus
                 />
               </div>
 
@@ -1260,6 +1339,65 @@ export default function CanvasGarden() {
                 }`}
               >
                 Create Plant
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {showPlantConfirmation && tempPlantData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white/10 backdrop-blur-md rounded-xl p-4 sm:p-6 border border-white/20 w-full max-w-md mx-4"
+          >
+            <h3 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-4 text-center">
+              Confirm Plant Creation
+            </h3>
+
+            <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
+              <div className="bg-white/5 rounded-lg p-3 sm:p-4">
+                <h4 className="text-xs sm:text-sm font-bold text-white mb-2 sm:mb-3">
+                  Plant Details
+                </h4>
+                <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Name:</span>
+                    <span className="text-white">{tempPlantData.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Category:</span>
+                    <span className="text-white capitalize">
+                      {tempPlantData.productivity_category}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Position:</span>
+                    <span className="text-white">
+                      ({tempPlantData.position_x}, {tempPlantData.position_y})
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 sm:gap-3">
+              <button
+                onClick={() => {
+                  setShowPlantConfirmation(false);
+                  setTempPlantData(null);
+                  setShowPlantCreator(true);
+                }}
+                className="flex-1 px-3 sm:px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors text-sm"
+              >
+                Back to Edit
+              </button>
+              <button
+                onClick={confirmCreatePlant}
+                className="flex-1 px-3 sm:px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors text-sm"
+              >
+                Confirm & Create
               </button>
             </div>
           </motion.div>
