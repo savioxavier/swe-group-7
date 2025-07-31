@@ -169,6 +169,15 @@ export default function CanvasGarden() {
   >(new Map());
   const [showPlantConfirmation, setShowPlantConfirmation] = useState(false);
   const [tempPlantData, setTempPlantData] = useState<PlantCreate | null>(null);
+  const [harvestMessage, setHarvestMessage] = useState<string | null>(null);
+
+  const motivationalQuotes: string[] = [
+    "Great harvest! Keep growing!",
+    "You're blooming with success!",
+    "Fantastic work, keep it up!",
+    "Harvest time! Your efforts paid off!",
+    "Keep sowing seeds of productivity!",
+  ];
 
   const loadSprite = useCallback(
     (spritePath: string): Promise<HTMLImageElement> => {
@@ -562,6 +571,12 @@ export default function CanvasGarden() {
       await loadPlants();
       await loadUserProgress();
       setSelectedPlant(null);
+      const randomMessage =
+        motivationalQuotes[
+          Math.floor(Math.random() * motivationalQuotes.length)
+        ];
+      setHarvestMessage(randomMessage);
+      setTimeout(() => setHarvestMessage(null), 3000);
     } catch (error) {
       console.error("Failed to harvest plant:", error);
       if (error instanceof Error && error.message.includes("Plant not found")) {
@@ -1474,6 +1489,11 @@ export default function CanvasGarden() {
           </div>,
           document.body
         )}
+      {harvestMessage && (
+        <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg">
+          {harvestMessage}
+        </div>
+      )}
     </div>
   );
 }
