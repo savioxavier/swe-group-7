@@ -1,32 +1,32 @@
-import React, { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Leaf, Mail, Lock, Eye, EyeOff } from 'lucide-react'
-import { useAuth } from '../contexts/AuthContext'
+import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Leaf, Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function SignIn() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const { login } = useAuth()
-  const navigate = useNavigate()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+    e.preventDefault();
+    setLoading(true);
+    setError("");
 
     try {
-      await login({ email, password })
-      navigate('/garden')
+      await login({ email, password });
+      navigate("/garden");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Login failed')
+      setError(err instanceof Error ? err.message : "Login failed");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-green-900 to-emerald-900">
@@ -38,7 +38,7 @@ export default function SignIn() {
             </div>
             <span className="text-xl font-bold text-white">Task Garden</span>
           </Link>
-          
+
           <div className="flex items-center space-x-4">
             <Link
               to="/signin"
@@ -73,8 +73,8 @@ export default function SignIn() {
               >
                 <Leaf className="w-10 h-10 text-white" />
               </motion.div>
-              
-              <motion.h1 
+
+              <motion.h1
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3 }}
@@ -82,8 +82,8 @@ export default function SignIn() {
               >
                 Welcome Back
               </motion.h1>
-              
-              <motion.p 
+
+              <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.4 }}
@@ -139,7 +139,7 @@ export default function SignIn() {
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-green-400 w-5 h-5" />
                   <input
-                    type={showPassword ? 'text' : 'password'}
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full pl-12 pr-12 py-4 glass rounded-xl text-white placeholder-green-300/60 input-focus text-sm font-medium"
@@ -151,7 +151,11 @@ export default function SignIn() {
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-4 top-1/2 transform -translate-y-1/2 text-green-400 hover:text-green-300 transition-colors"
                   >
-                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    {showPassword ? (
+                      <EyeOff className="w-5 h-5" />
+                    ) : (
+                      <Eye className="w-5 h-5" />
+                    )}
                   </button>
                 </div>
               </motion.div>
@@ -182,8 +186,11 @@ export default function SignIn() {
 
             <div className="text-center mt-6">
               <p className="text-green-200/80">
-                Don't have an account?{' '}
-                <Link to="/signup" className="text-green-400 hover:text-green-300 font-semibold">
+                Don't have an account?{" "}
+                <Link
+                  to="/signup"
+                  className="text-green-400 hover:text-green-300 font-semibold"
+                >
                   Sign up
                 </Link>
               </p>
@@ -192,5 +199,5 @@ export default function SignIn() {
         </motion.div>
       </div>
     </div>
-  )
+  );
 }
