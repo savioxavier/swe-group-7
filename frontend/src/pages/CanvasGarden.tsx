@@ -170,13 +170,28 @@ export default function CanvasGarden() {
   const [showPlantConfirmation, setShowPlantConfirmation] = useState(false);
   const [tempPlantData, setTempPlantData] = useState<PlantCreate | null>(null);
   const [harvestMessage, setHarvestMessage] = useState<string | null>(null);
+  const [workMessage, setWorkMessage] = useState<string | null>(null);
 
-  const motivationalQuotes: string[] = [
-    "Great harvest! Keep growing!",
-    "You're blooming with success!",
-    "Fantastic work, keep it up!",
-    "Harvest time! Your efforts paid off!",
-    "Keep sowing seeds of productivity!",
+  const workMotivationalQuotes: string[] = [
+    "Excellent work! You're making real progress today.",
+    "Great job! Every step forward counts.",
+    "Strong work! You're building something meaningful.",
+    "Excellent work! Keep that energy flowing.",
+    "Great job! You're turning plans into action.",
+    "Fantastic effort! Your focus is paying off.",
+    "Strong work! You're showing up with purpose.",
+    "Excellent work! Success is stacking up, one task at a time.",
+  ];
+
+  const harvestMotivationalQuotes: string[] = [
+    "Great harvest! You've earned every bit of it.",
+    "Harvest complete! Your hard work has blossomed.",
+    "Well done! You're reaping the rewards of persistence.",
+    "It's harvest time - your effort bore fruit!",
+    "You've cultivated success - enjoy the results!",
+    "The seeds you planted have grown into real wins.",
+    "Strong finish! Your productivity paid off.",
+    "You nurtured every task - now enjoy the yield!",
   ];
 
   const loadSprite = useCallback(
@@ -557,6 +572,14 @@ export default function CanvasGarden() {
       const updatedPlant = plants.find((p) => p.id === selectedPlant.id);
       if (updatedPlant) {
         setSelectedPlant(updatedPlant);
+        // Show motivational message for logging work
+        const randomMessage =
+          workMotivationalQuotes[
+            Math.floor(Math.random() * workMotivationalQuotes.length)
+          ];
+        setWorkMessage(randomMessage);
+        // gotta wait for the backend tasks to complete. could use a proper awaiter but it's not worth it
+        setTimeout(() => setWorkMessage(null), 3000);
       }
     } catch (error) {
       console.error("Failed to log work:", error);
@@ -572,8 +595,8 @@ export default function CanvasGarden() {
       await loadUserProgress();
       setSelectedPlant(null);
       const randomMessage =
-        motivationalQuotes[
-          Math.floor(Math.random() * motivationalQuotes.length)
+        harvestMotivationalQuotes[
+          Math.floor(Math.random() * harvestMotivationalQuotes.length)
         ];
       setHarvestMessage(randomMessage);
       setTimeout(() => setHarvestMessage(null), 3000);
@@ -1489,6 +1512,11 @@ export default function CanvasGarden() {
           </div>,
           document.body
         )}
+      {workMessage && (
+        <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg">
+          {workMessage}
+        </div>
+      )}
       {harvestMessage && (
         <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg">
           {harvestMessage}
