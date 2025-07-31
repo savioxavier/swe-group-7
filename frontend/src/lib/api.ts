@@ -156,6 +156,14 @@ export const api = {
   async runManualDecay(): Promise<{message: string}> {
     return this.post<{message: string}>('/admin/decay/run')
   },
+
+  async getTodaysWorkLogs(): Promise<TaskWorkResponse[]> {
+    return this.get<TaskWorkResponse[]>('/plants/work/today')
+  },
+
+  async completeTask(plantId: string): Promise<{message: string}> {
+    return this.post<{message: string}>(`/plants/${plantId}/complete`)
+  },
 }
 
 export { ApiError }

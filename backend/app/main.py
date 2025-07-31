@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from .routers import tasks, plants, users, admin
+from .routers import plants, users, admin
 from .services.scheduler_service import scheduler_service
 import logging
 
@@ -26,7 +26,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(plants.router, prefix="/api/plants", tags=["plants"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])

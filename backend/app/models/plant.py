@@ -23,23 +23,29 @@ class DecayStatus(str, Enum):
     DEAD = "dead"
 
 class PlantCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=100)  # This is now the task name
+    task_description: Optional[str] = Field(None, max_length=500)  # Optional task description
     productivity_category: ProductivityCategory
     plant_sprite: str = Field(..., min_length=1, max_length=50)
-    position_x: int = Field(..., ge=0, le=10)
-    position_y: int = Field(..., ge=0, le=6)
+    position_x: int = Field(..., ge=0, le=8)  # Updated for 9x7 grid (0-8)
+    position_y: int = Field(..., ge=0, le=6)  # Updated for 9x7 grid (0-6)
 
 class PlantUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
+    task_description: Optional[str] = Field(None, max_length=500)
+    task_status: Optional[str] = Field(None, pattern="^(active|completed|harvested)$")
     plant_sprite: Optional[str] = Field(None, min_length=1, max_length=50)
-    position_x: Optional[int] = Field(None, ge=0, le=10)
+    position_x: Optional[int] = Field(None, ge=0, le=8)  # Updated for 9x7 grid
     position_y: Optional[int] = Field(None, ge=0, le=6)
     is_active: Optional[bool] = None
 
 class PlantResponse(BaseModel):
     id: str
     user_id: str
-    name: str
+    name: str  # This is now the task name
+    task_description: Optional[str] = None  # Task description
+    task_status: Optional[str] = "active"  # active, completed, harvested
+    completion_date: Optional[datetime] = None  # When task was completed
     plant_type: Optional[PlantType] = None
     productivity_category: Optional[ProductivityCategory] = None
     plant_sprite: str

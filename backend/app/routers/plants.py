@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer
 from typing import List
 from app.services.auth import get_current_user_id, get_authenticated_supabase
 from app.services.plant_service import PlantService
+from app.services.auto_harvest_service import AutoHarvestService
 from app.models.plant import PlantCreate, PlantUpdate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse
 
 router = APIRouter()
@@ -57,6 +58,11 @@ async def log_task_work(
     auth_supabase, user_id = await get_authenticated_supabase(credentials)
     return await PlantService.log_task_work(user_id, work_data, auth_supabase)
 
+@router.get("/work/today", response_model=List[TaskWorkResponse])
+async def get_todays_work_logs(credentials = Depends(security)):
+    auth_supabase, user_id = await get_authenticated_supabase(credentials)
+    return await PlantService.get_todays_work_logs(user_id, auth_supabase)
+
 @router.get("/progress/me", response_model=UserProgressResponse)
 async def get_user_progress(credentials = Depends(security)):
     auth_supabase, user_id = await get_authenticated_supabase(credentials)
@@ -68,5 +74,13 @@ async def harvest_plant(
     credentials = Depends(security)
 ):
     auth_supabase, user_id = await get_authenticated_supabase(credentials)
-    return await PlantService.harvest_plant(user_id, plant_id, auth_supabase)
+    return await AutoHarvestService.manual_harvest(user_id, plant_id, auth_supabase)
+
+@router.post("/{plant_id}/complete")
+async def complete_task(
+    plant_id: str,
+    credentials = Depends(security)
+):
+    auth_supabase, user_id = await get_authenticated_supabase(credentials)
+    return await AutoHarvestService.complete_task(user_id, plant_id, auth_supabase)
 

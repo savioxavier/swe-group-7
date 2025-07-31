@@ -14,6 +14,9 @@ class PlantService:
             insert_data = {
                 "user_id": user_id,
                 "name": plant_data.name,
+                "task_name": plant_data.name,  # Task name is the same as plant name
+                "task_description": plant_data.task_description,
+                "task_status": "active",  # Default status for new tasks
                 "plant_sprite": plant_data.plant_sprite,
                 "position_x": plant_data.position_x,
                 "position_y": plant_data.position_y,
@@ -56,6 +59,14 @@ class PlantService:
                     plant_dict['days_without_care'] = 0
                 if 'plant_sprite' not in plant_dict:
                     plant_dict['plant_sprite'] = 'carrot'
+                
+                # Handle backward compatibility for task fields
+                if 'task_name' not in plant_dict or not plant_dict.get('task_name'):
+                    plant_dict['task_name'] = plant_dict.get('name', 'Unnamed Task')
+                if 'task_description' not in plant_dict:
+                    plant_dict['task_description'] = None
+                if 'task_status' not in plant_dict:
+                    plant_dict['task_status'] = 'active'
                 
                 if 'productivity_category' not in plant_dict and 'plant_type' not in plant_dict:
                     plant_dict['plant_type'] = PlantType.WORK.value
@@ -101,6 +112,15 @@ class PlantService:
             update_data = {}
             if plant_data.name is not None:
                 update_data["name"] = plant_data.name
+                update_data["task_name"] = plant_data.name  # Keep task_name in sync with name
+            if plant_data.task_description is not None:
+                update_data["task_description"] = plant_data.task_description
+            if plant_data.task_status is not None:
+                update_data["task_status"] = plant_data.task_status
+                # If marking as completed, set completion date
+                if plant_data.task_status == "completed":
+                    from datetime import datetime
+                    update_data["completion_date"] = datetime.now()
             if plant_data.plant_sprite is not None:
                 update_data["plant_sprite"] = plant_data.plant_sprite
             if plant_data.position_x is not None:
@@ -439,3 +459,45 @@ class PlantService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to harvest plant: {str(e)}")
     
+    @staticmethod
+    async def get_todays_work_logs(user_id: str, auth_supabase=None) -> List[TaskWorkResponse]:
+        from app.config import supabase
+        from datetime import datetime, timezone
+        
+        client = auth_supabase or supabase
+        today = datetime.now(timezone.utc).date()
+        
+        try:
+            # Since there's no task_time_logs table with relationship to plants,
+            # we'll calculate today's work from the plants' last_worked_date
+            result = client.table("plants").select("*").eq("user_id", user_id).eq("is_active", True).execute()
+            
+            work_logs = []
+            for plant_dict in result.data:
+                # Check if plant was worked on today by comparing last_worked_date
+                last_worked = plant_dict.get("last_worked_date")
+                if last_worked:
+                    try:
+                        if isinstance(last_worked, str):
+                            last_worked_date = date.fromisoformat(last_worked.split('T')[0])
+                        else:
+                            last_worked_date = last_worked.date() if hasattr(last_worked, 'date') else last_worked
+                        
+                        # If worked today, create a mock work log entry
+                        if last_worked_date == today:
+                            work_logs.append(TaskWorkResponse(
+                                id=f"today_{plant_dict['id']}",
+                                plant_id=plant_dict["id"],
+                                user_id=plant_dict["user_id"],
+                                hours_worked=1.0,  # Default placeholder
+                                experience_gained=100,  # Default placeholder
+                                description=f"Work on {plant_dict.get('name', 'Task')}",
+                                created_at=plant_dict.get("updated_at", datetime.now())
+                            ))
+                    except:
+                        continue
+            
+            return work_logs
+            
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to get today's work logs: {str(e)}")
