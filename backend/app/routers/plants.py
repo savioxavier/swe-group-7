@@ -84,3 +84,9 @@ async def complete_task(
     auth_supabase, user_id = await get_authenticated_supabase(credentials)
     return await AutoHarvestService.complete_task(user_id, plant_id, auth_supabase)
 
+@router.post("/harvest/user")
+async def harvest_user_trophies(credentials = Depends(security)):
+    """Harvest all trophy plants for the current user"""
+    auth_supabase, user_id = await get_authenticated_supabase(credentials)
+    return await AutoHarvestService.check_and_harvest_completed_tasks(user_id, auth_supabase, force_harvest=True)
+

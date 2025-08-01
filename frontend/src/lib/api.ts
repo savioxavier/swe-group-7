@@ -171,6 +171,10 @@ export const api = {
   async completeTask(plantId: string): Promise<{message: string}> {
     return this.post<{message: string}>(`/plants/${plantId}/complete`)
   },
+
+  async harvestUserTrophies(): Promise<{message: string, harvested_count: number}> {
+    return this.post<{message: string, harvested_count: number}>('/plants/harvest/user')
+  },
 }
 
 export { ApiError }

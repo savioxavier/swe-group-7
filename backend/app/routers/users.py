@@ -180,17 +180,14 @@ async def apply_daily_decay(credentials: HTTPAuthorizationCredentials = Depends(
 
 @router.post("/logout")
 async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Logout user and trigger auto-harvest for their trophy plants"""
+    """Logout user without auto-harvesting plants"""
     try:
         auth_supabase, user_id = await get_authenticated_supabase(credentials)
-        
-        # Trigger auto-harvest for this user's trophy plants with force=True for immediate harvest
-        await AutoHarvestService.check_and_harvest_completed_tasks(user_id, auth_supabase, force_harvest=True)
         
         # Sign out the user
         auth_supabase.auth.sign_out()
         
-        return {"message": "Logged out successfully. Trophy plants have been auto-harvested."}
+        return {"message": "Logged out successfully."}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")

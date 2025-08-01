@@ -8,14 +8,38 @@ interface TrophyDialogProps {
   plant: Plant | null
   isOpen: boolean
   onClose: () => void
+  onCompleteTask?: (plantId: string) => Promise<void>
 }
 
 export const TrophyDialog: React.FC<TrophyDialogProps> = ({
   plant,
   isOpen,
-  onClose
+  onClose,
+  onCompleteTask
 }) => {
   if (!isOpen || !plant) return null
+
+  const handleAcknowledge = async () => {
+    if (onCompleteTask && plant.id && plant.task_status !== 'completed') {
+      try {
+        await onCompleteTask(plant.id)
+      } catch (error) {
+        console.error('Failed to complete task:', error)
+      }
+    }
+    onClose()
+  }
+
+  const handleClose = async () => {
+    if (onCompleteTask && plant.id && plant.task_status !== 'completed') {
+      try {
+        await onCompleteTask(plant.id)
+      } catch (error) {
+        console.error('Failed to complete task:', error)
+      }
+    }
+    onClose()
+  }
 
   return createPortal(
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -30,7 +54,7 @@ export const TrophyDialog: React.FC<TrophyDialogProps> = ({
             <h2 className="text-xl font-bold text-white">Trophy Plant</h2>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="text-white/70 hover:text-white text-2xl font-bold"
           >
             ×
@@ -88,7 +112,7 @@ export const TrophyDialog: React.FC<TrophyDialogProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleAcknowledge}
             className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
           >
             Acknowledge Achievement

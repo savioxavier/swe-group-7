@@ -11,23 +11,37 @@ class AutoHarvestService:
     async def check_and_harvest_completed_tasks(user_id: str = None, auth_supabase=None, force_harvest: bool = False):
         """Check for completed tasks that should be auto-harvested after 6 hours or immediately if forced"""
         client = auth_supabase or supabase
+        harvested_count = 0
         
         try:
-            # Get all completed plants
-            query = client.table("plants").select("*").eq("task_status", "completed").eq("is_active", True)
+            # Get all completed plants OR plants at stage 5 (trophy plants)
+            query = client.table("plants").select("*").eq("is_active", True)
             if user_id:
                 query = query.eq("user_id", user_id)
             
             result = query.execute()
             
             for plant_dict in result.data:
+                # Check if this is a trophy plant (stage 5) or completed task
+                plant_stage = min(5, plant_dict.get('growth_level', 0) // 20)
+                is_trophy = plant_stage >= 5
+                is_completed = plant_dict.get('task_status') == 'completed'
                 completion_date = plant_dict.get('completion_date')
-                if not completion_date:
-                    continue
+                
+                # For manual harvest (force_harvest=True), only harvest completed tasks
+                # For automatic harvest (force_harvest=False), harvest based on time since completion
+                if force_harvest:
+                    # Only harvest if the task is completed
+                    if not is_completed:
+                        continue
+                else:
+                    # Skip if neither trophy nor completed
+                    if not (is_trophy or is_completed):
+                        continue
                 
                 should_harvest = force_harvest
                 
-                if not should_harvest:
+                if not should_harvest and completion_date:
                     # Parse completion date
                     if isinstance(completion_date, str):
                         completion_dt = datetime.fromisoformat(completion_date.replace('Z', '+00:00'))
@@ -37,6 +51,9 @@ class AutoHarvestService:
                     # Check if it's been 6 hours since completion
                     hours_since_completion = (datetime.now() - completion_dt).total_seconds() / 3600
                     should_harvest = hours_since_completion >= 6
+                elif not should_harvest and is_trophy and not completion_date:
+                    # For trophy plants without completion date, only harvest if it's an automatic check (not manual)
+                    should_harvest = False
                 
                 if should_harvest:
                     # Auto-harvest this plant
@@ -44,9 +61,15 @@ class AutoHarvestService:
                         "task_status": "harvested",
                         "is_active": False  # Remove from garden
                     }).eq("id", plant_dict["id"]).execute()
+                    harvested_count += 1
+            
+            return {
+                "message": f"Auto-harvest completed! {harvested_count} trophy plants cleared.",
+                "harvested_count": harvested_count
+            }
                     
         except Exception as e:
-            print(f"Error in auto-harvest check: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to run auto-harvest: {str(e)}")
     
     @staticmethod
     async def complete_task(user_id: str, plant_id: str, auth_supabase=None) -> dict:

@@ -292,7 +292,12 @@ export default function CanvasGarden() {
       await loadPlants()
     } catch (error) {
       console.error('Failed to complete task:', error)
-      alert('Failed to complete task. Please try again.')
+      // Don't show alert for already completed tasks, just log it
+      if (error instanceof Error && error.message.includes('already completed')) {
+        // Task was already completed, silently continue
+      } else {
+        alert('Failed to complete task. Please try again.')
+      }
     }
   }
 
@@ -358,18 +363,34 @@ export default function CanvasGarden() {
 
   // Daily task panel logic
   const shouldShowDailyTasks = useCallback(() => {
-    if (!user || hasShownDailyPanel) return false
+    if (!user) return false
     
     const today = new Date().toDateString()
     const skippedToday = localStorage.getItem(`taskPanelSkipped_${today}`)
     if (skippedToday) return false
     
-    const workedToday = plants.some(plant => {
+    // Reset hasShownDailyPanel for new days
+    const lastShownDate = localStorage.getItem('lastDailyPanelDate')
+    if (lastShownDate !== today) {
+      setHasShownDailyPanel(false)
+      localStorage.setItem('lastDailyPanelDate', today)
+    }
+    
+    if (hasShownDailyPanel && lastShownDate === today) return false
+    
+    // Check if user has any active plants
+    if (plants.length === 0) return false
+    
+    // Show daily tasks if user hasn't worked in the last 2 hours
+    // This allows the panel to show multiple times per day if there's a gap
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    const recentWork = plants.some(plant => {
       if (!plant.lastWatered) return false
-      return new Date(plant.lastWatered).toDateString() === today
+      const lastWorked = new Date(plant.lastWatered)
+      return lastWorked > twoHoursAgo
     })
     
-    return !workedToday
+    return !recentWork
   }, [user, hasShownDailyPanel, plants])
 
   const skipDailyTasks = () => {
@@ -393,15 +414,19 @@ export default function CanvasGarden() {
   }, [mode])
 
   useEffect(() => {
-    if (user && plants.length > 0 && shouldShowDailyTasks()) {
-      setShouldAutoShowTasks(true)
-      setShowTaskPanel(true)
-      setMode('tasks')
-      setHasShownDailyPanel(true)
-      setSelectedPlant(null)
-      setShowWorkDialog(false)
+    if (user && plants.length > 0) {
+      const shouldShow = shouldShowDailyTasks()
+      
+      if (shouldShow) {
+        setShouldAutoShowTasks(true)
+        setShowTaskPanel(true)
+        setMode('tasks')
+        setHasShownDailyPanel(true)
+        setSelectedPlant(null)
+        setShowWorkDialog(false)
+      }
     }
-  }, [user, plants, shouldShowDailyTasks])
+  }, [user, plants, shouldShowDailyTasks, hasShownDailyPanel])
 
   // Preload sprites
   useEffect(() => {
@@ -541,6 +566,7 @@ export default function CanvasGarden() {
           setShowTrophyDialog(false)
           setSelectedPlant(null)
         }}
+        onCompleteTask={completeTask}
       />
 
       <TaskPanel

@@ -90,10 +90,18 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      // Call the backend logout endpoint to trigger auto-harvest
+      // Auto-harvest completed trophy plants before logout
+      try {
+        await api.harvestUserTrophies()
+      } catch (harvestError) {
+        // Don't fail logout if harvest fails
+        console.error('Auto-harvest failed during logout:', harvestError)
+      }
+      
+      // Call the backend logout endpoint 
       await api.logout()
     } catch (error) {
-      console.error('Error during logout:', error)
+      console.error('🚪 Error during logout:', error)
       // Continue with local logout even if backend call fails
     } finally {
       // Always clear local storage
@@ -102,6 +110,10 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       localStorage.removeItem('tokenExpiry')
+      // Clear daily panel states for next login
+      localStorage.removeItem('lastDailyPanelDate')
+      const today = new Date().toDateString()
+      localStorage.removeItem(`taskPanelSkipped_${today}`)
     }
   }
 

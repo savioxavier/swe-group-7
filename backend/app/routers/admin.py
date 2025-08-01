@@ -54,3 +54,13 @@ async def manually_run_decay(credentials = Depends(security)):
         return {"message": "Daily decay process completed manually"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to run decay: {str(e)}")
+
+@router.post("/harvest/run")
+async def manually_run_auto_harvest(credentials = Depends(security)):
+    await require_admin(credentials)
+    from ..services.auto_harvest_service import AutoHarvestService
+    try:
+        await AutoHarvestService.check_and_harvest_completed_tasks(force_harvest=True)
+        return {"message": "Auto-harvest process completed manually - all trophy plants cleared"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to run auto-harvest: {str(e)}")
