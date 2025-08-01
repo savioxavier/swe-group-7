@@ -1,10 +1,17 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { motion } from 'framer-motion'
-import { Plus, Leaf, LogOut, Zap, Info, BarChart3 } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Plus, Leaf, LogOut, Zap, Info, BarChart3, Trophy } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { api } from '../lib/api'
-import { PlantCreate, PlantResponse } from '../types'
+import { PlantCreate, PlantResponse, UserProgressResponse } from '../types'
+import { CinematicPlotFocus } from '../components/animations/CinematicPlotFocus'
+import { CinematicPlantCreator } from '../components/animations/CinematicPlantCreator'
+import { PlantGrowthEffects } from '../components/animations/PlantGrowthEffects'
+import { XPGainEffects } from '../components/animations/XPGainEffects'
+import { useCinematicPlanting } from '../hooks/useCinematicPlanting'
+import { usePlantGrowthAnimations } from '../hooks/usePlantGrowthAnimations'
+import { useXPAnimations } from '../hooks/useXPAnimations'
 
 interface Plant {
   id: string
@@ -28,7 +35,7 @@ interface Plant {
 
 const GRID_WIDTH = 6
 const GRID_HEIGHT = 5
-const CELL_SIZE = 80
+const CELL_SIZE = 100 // Reduced from 120 to make garden smaller
 
 const PLANTABLE_POSITIONS = [
   { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
@@ -130,16 +137,13 @@ export default function CanvasGarden() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [plants, setPlants] = useState<Plant[]>([])
   const [loading, setLoading] = useState(true)
+  const [userProgress, setUserProgress] = useState<UserProgressResponse | null>(null)
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null)
   const [mode, setMode] = useState<'plant' | 'info' | 'tasks'>('plant')
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null)
   const [hoveredPlant, setHoveredPlant] = useState<Plant | null>(null)
   const [showPlantCreator, setShowPlantCreator] = useState(false)
   const [pendingPlantPosition, setPendingPlantPosition] = useState<{x: number, y: number} | null>(null)
-  const [plantForm, setPlantForm] = useState({
-    name: '',
-    category: ''
-  })
   const [loadedSprites, setLoadedSprites] = useState<Map<string, HTMLImageElement>>(new Map())
   
   const [submissionMessage, setSubmissionMessage] = useState('')
@@ -151,9 +155,39 @@ export default function CanvasGarden() {
   const [focusedPlantId, setFocusedPlantId] = useState<string | null>(null)
   const [showWorkDialog, setShowWorkDialog] = useState(false)
   const [workHours, setWorkHours] = useState('')
+  const [showTrophyDialog, setShowTrophyDialog] = useState(false)
   
-  const [growingPlants, setGrowingPlants] = useState<Set<string>>(new Set())
-  const [xpAnimations, setXpAnimations] = useState<Map<string, number>>(new Map())
+  // Cinematic planting system
+  const {
+    isCinemaMode,
+    focusPosition,
+    isAnimating,
+    startCinematicPlanting,
+    onCinemaAnimationComplete,
+    startReturnAnimation,
+    exitCinemaMode
+  } = useCinematicPlanting({
+    onPlantCreated: (position) => {
+      setPendingPlantPosition(position)
+      setShowPlantCreator(true)
+    }
+  })
+
+  // Plant growth animation system
+  const {
+    activeGrowthAnimations,
+    triggerGrowthAnimation,
+    onGrowthAnimationComplete,
+    cleanup: cleanupGrowthAnimations
+  } = usePlantGrowthAnimations()
+
+  // XP animation system
+  const {
+    activeXPAnimations,
+    triggerXPAnimation: triggerXPAnimationHook,
+    onXPAnimationComplete,
+    cleanup: cleanupXPAnimations
+  } = useXPAnimations()
 
   const loadSprite = useCallback((spritePath: string): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
@@ -323,69 +357,17 @@ export default function CanvasGarden() {
         ctx.strokeRect(plant.x * CELL_SIZE + 1, plant.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2)
       }
 
+
       if (hoveredPlant?.id === plant.id && mode === 'info') {
         ctx.strokeStyle = '#06b6d4'
         ctx.lineWidth = 2
         ctx.strokeRect(plant.x * CELL_SIZE + 1, plant.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2)
       }
 
+
       ctx.fillStyle = getPlantColor(plant.type)
       ctx.fillRect(plant.x * CELL_SIZE + 2, plant.y * CELL_SIZE + 2, 8, 8)
 
-      if (growingPlants.has(plant.id)) {
-        ctx.save()
-        ctx.globalAlpha = 0.8
-        
-        const time = Date.now() * 0.005
-        const glowRadius = 30 + Math.sin(time) * 10
-        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, glowRadius)
-        gradient.addColorStop(0, 'rgba(34, 197, 94, 0.8)')
-        gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.4)')
-        gradient.addColorStop(1, 'rgba(34, 197, 94, 0)')
-        
-        ctx.fillStyle = gradient
-        ctx.fillRect(centerX - glowRadius, centerY - glowRadius, glowRadius * 2, glowRadius * 2)
-        
-        for (let i = 0; i < 6; i++) {
-          const angle = (time + i * Math.PI / 3) % (Math.PI * 2)
-          const sparkleX = centerX + Math.cos(angle) * (20 + Math.sin(time * 2) * 5)
-          const sparkleY = centerY + Math.sin(angle) * (20 + Math.sin(time * 2) * 5)
-          
-          ctx.fillStyle = '#fbbf24'
-          ctx.beginPath()
-          ctx.arc(sparkleX, sparkleY, 2, 0, 2 * Math.PI)
-          ctx.fill()
-        }
-        
-        ctx.restore()
-      }
-      
-      if (xpAnimations.has(plant.id)) {
-        const xpGained = xpAnimations.get(plant.id)!
-        ctx.save()
-        
-        ctx.fillStyle = '#22c55e'
-        ctx.font = 'bold 14px Arial'
-        ctx.textAlign = 'center'
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
-        ctx.shadowBlur = 2
-        ctx.fillText(`+${xpGained} XP`, centerX, centerY - 40)
-        
-        ctx.restore()
-      }
-      
-      if (plant.animationStage !== undefined && growingPlants.has(plant.id)) {
-        ctx.save()
-        
-        ctx.fillStyle = '#fbbf24'
-        ctx.font = 'bold 12px Arial'
-        ctx.textAlign = 'center'
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'
-        ctx.shadowBlur = 3
-        ctx.fillText(`Growing... Stage ${plant.animationStage}/5`, centerX, centerY - 50)
-        
-        ctx.restore()
-      }
 
       if (mode === 'info' && (hoveredPlant?.id === plant.id || selectedPlant?.id === plant.id)) {
         const cellX = plant.x * CELL_SIZE
@@ -422,6 +404,27 @@ export default function CanvasGarden() {
           ctx.globalAlpha = 1
         }
       }
+    }
+
+    if (mode === 'tasks' && hoveredPlant) {
+      const plantX = hoveredPlant.x * CELL_SIZE
+      const plantY = hoveredPlant.y * CELL_SIZE
+      
+      // Color-coded overlay based on plant status
+      let overlayColor = '#3b82f6' // Blue for healthy
+      
+      if (hoveredPlant.decay_status === 'dead') {
+        overlayColor = '#dc2626' // Red for dead
+      } else if (hoveredPlant.decay_status === 'severely_wilted' || hoveredPlant.decay_status === 'wilted') {
+        overlayColor = '#f59e0b' // Yellow for wilted
+      } else if (hoveredPlant.stage >= 5) {
+        overlayColor = '#8b5cf6' // Purple for trophy/completed
+      }
+      
+      ctx.globalAlpha = 0.6
+      ctx.fillStyle = overlayColor
+      ctx.fillRect(plantX, plantY, CELL_SIZE, CELL_SIZE)
+      ctx.globalAlpha = 1
     }
   }, [plants, selectedPlant, mousePos, hoveredPlant, mode, getPlantSpriteImage, loadSprite])
 
@@ -488,7 +491,7 @@ export default function CanvasGarden() {
       setMousePos({ x, y })
     }
 
-    if (mode === 'info') {
+    if (mode === 'info' || mode === 'tasks') {
       const gridX = Math.floor(x / CELL_SIZE)
       const gridY = Math.floor(y / CELL_SIZE)
       const hoveredPlant = plants.find(p => p.x === gridX && p.y === gridY)
@@ -525,16 +528,18 @@ export default function CanvasGarden() {
         } else {
           setSelectedPlant(null)
           if (isPositionPlantable(gridX, gridY)) {
-            setPendingPlantPosition({ x: gridX, y: gridY })
-            setShowPlantCreator(true)
-            setPlantForm({ name: '', description: '', category: '' })
+            startCinematicPlanting({ x: gridX, y: gridY })
           }
         }
       } else if (mode === 'info') {
         setSelectedPlant(clickedPlant || null)
       } else if (mode === 'tasks' && clickedPlant) {
         setSelectedPlant(clickedPlant)
-        setShowWorkDialog(true)
+        if (clickedPlant.stage >= 5) {
+          setShowTrophyDialog(true)
+        } else {
+          setShowWorkDialog(true)
+        }
       }
     } else if (mode === 'plant') {
       setSelectedPlant(null)
@@ -563,7 +568,7 @@ export default function CanvasGarden() {
       const plantAfter = updatedPlants.find(p => p.id === plantId)
       if (plantAfter && plantAfter.stage > stageBefore) {
         setTimeout(() => {
-          triggerGrowthAnimation(plantId)
+          handleGrowthAnimation(plantId, plantAfter.stage)
         }, 1000)
       }
       
@@ -601,38 +606,17 @@ export default function CanvasGarden() {
     }
   }
 
-  const createPlant = async () => {
-    if (pendingPlantPosition && plantForm.name && plantForm.category) {
-      try {
-        const selectedSprite = getRandomPlantForCategory(plantForm.category)
-        const plantData: PlantCreate = {
-          name: plantForm.name.trim(),
-          productivity_category: plantForm.category as 'work' | 'study' | 'exercise' | 'creative',
-          plant_sprite: selectedSprite,
-          position_x: pendingPlantPosition.x,
-          position_y: pendingPlantPosition.y
-        }
-        const apiPlant = await api.createPlant(plantData)
-        const newPlant = convertApiPlantToLocal(apiPlant)
-        setPlants([...plants, newPlant])
-        setShowPlantCreator(false)
-        setPendingPlantPosition(null)
-        setPlantForm({ name: '', category: '' })
-      } catch (error) {
-        console.error('Failed to create plant:', error)
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        alert(`Failed to create task: ${errorMessage}`)
-      }
+
+
+  const loadUserProgress = useCallback(async () => {
+    if (!token) return
+    try {
+      const progress = await api.getUserProgress()
+      setUserProgress(progress)
+    } catch (error) {
+      console.error('Failed to load user progress:', error)
     }
-  }
-
-  const cancelPlantCreation = () => {
-    setShowPlantCreator(false)
-    setPendingPlantPosition(null)
-    setPlantForm({ name: '', category: '' })
-  }
-
-  const isFormValid = plantForm.name.trim() && plantForm.category
+  }, [token])
 
   const loadPlants = useCallback(async () => {
     if (!token) return
@@ -651,7 +635,8 @@ export default function CanvasGarden() {
 
   useEffect(() => {
     loadPlants()
-  }, [loadPlants])
+    loadUserProgress()
+  }, [loadPlants, loadUserProgress])
 
   useEffect(() => {
     if (mode !== 'tasks') {
@@ -693,85 +678,65 @@ export default function CanvasGarden() {
     setMode('plant')
   }
 
-  const triggerXPAnimation = (plantId: string, xpGained: number) => {
-    setXpAnimations(prev => new Map(prev).set(plantId, xpGained))
-    setTimeout(() => {
-      setXpAnimations(prev => {
-        const newMap = new Map(prev)
-        newMap.delete(plantId)
-        return newMap
-      })
-    }, 2000)
-  }
-
-  const triggerGrowthAnimation = (plantId: string) => {
-    setGrowingPlants(prev => new Set(prev).add(plantId))
-    
+  const triggerXPAnimation = (plantId: string, xpGained: number, showInHeader: boolean = false) => {
     const plant = plants.find(p => p.id === plantId)
     if (plant) {
-      const finalStage = plant.stage
-      
-      if (finalStage > 1) {
-        let animationStage = 1
-        const stageInterval = setInterval(() => {
-          if (animationStage <= finalStage) {
-            setPlants(prevPlants => 
-              prevPlants.map(p => 
-                p.id === plantId 
-                  ? { ...p, animationStage: animationStage }
-                  : p
-              )
-            )
-            animationStage++
-          } else {
-            clearInterval(stageInterval)
-            setTimeout(() => {
-              setPlants(prevPlants => 
-                prevPlants.map(p => 
-                  p.id === plantId 
-                    ? { ...p, animationStage: undefined }
-                    : p
-                )
-              )
-            }, 800)
-          }
-        }, 300)
+      const maxXP = 2000
+      triggerXPAnimationHook(
+        plantId,
+        xpGained,
+        { x: plant.x, y: plant.y },
+        plant.experience_points,
+        maxXP,
+        showInHeader
+      )
+    }
+  }
+
+  const handleGrowthAnimation = (plantId: string, newStage: number) => {
+    const plant = plants.find(p => p.id === plantId)
+    if (plant) {
+      const oldStage = Math.min(5, Math.floor((plant.growth_level || 0) / 20)) // Use same calculation as main stage
+      triggerGrowthAnimation(plantId, oldStage, newStage, { x: plant.position_x, y: plant.position_y })
+    }
+  }
+
+  const createPlant = async (plantData: { name: string, description: string, category: string }) => {
+    if (pendingPlantPosition) {
+      try {
+        const selectedSprite = getRandomPlantForCategory(plantData.category)
+        const apiPlantData: PlantCreate = {
+          name: plantData.name.trim(),
+          productivity_category: plantData.category as 'work' | 'study' | 'exercise' | 'creative',
+          plant_sprite: selectedSprite,
+          position_x: pendingPlantPosition.x,
+          position_y: pendingPlantPosition.y
+        }
+        const apiPlant = await api.createPlant(apiPlantData)
+        const newPlant = convertApiPlantToLocal(apiPlant)
+        setPlants([...plants, newPlant])
+        
+        setShowPlantCreator(false)
+        startReturnAnimation()
+        setPendingPlantPosition(null)
+      } catch (error) {
+        console.error('Failed to create plant:', error)
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+        alert(`Failed to create task: ${errorMessage}`)
       }
     }
-    
-    setTimeout(() => {
-      setGrowingPlants(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(plantId)
-        return newSet
-      })
-    }, 4000)
   }
+
+  const handlePlantCreatorClose = () => {
+    setShowPlantCreator(false)
+    startReturnAnimation()
+  }
+
 
   useEffect(() => {
     drawGarden()
   }, [plants, drawGarden])
 
-  useEffect(() => {
-    let animationFrame: number
-    
-    const animate = () => {
-      if (growingPlants.size > 0 || xpAnimations.size > 0) {
-        drawGarden()
-        animationFrame = requestAnimationFrame(animate)
-      }
-    }
-    
-    if (growingPlants.size > 0 || xpAnimations.size > 0) {
-      animationFrame = requestAnimationFrame(animate)
-    }
-    
-    return () => {
-      if (animationFrame) {
-        cancelAnimationFrame(animationFrame)
-      }
-    }
-  }, [growingPlants, xpAnimations, drawGarden])
   useEffect(() => {
     const preloadSprites = async () => {
       const allPlants = Object.values(CATEGORY_PLANTS).flat()
@@ -885,10 +850,10 @@ export default function CanvasGarden() {
               <div className="flex items-center space-x-2 text-white header-stats">
                 <div className="bg-white/10 px-3 py-2 rounded flex items-center space-x-1">
                   <Zap className="w-4 h-4 text-yellow-400" />
-                  <span className="text-sm">Level 1</span>
+                  <span className="text-sm">Level {userProgress?.level || 1}</span>
                 </div>
                 <div className="bg-white/10 px-3 py-2 rounded">
-                  <span className="text-sm">0 XP</span>
+                  <span className="text-sm">{userProgress?.total_experience_points || 0} XP</span>
                 </div>
               </div>
               
@@ -908,18 +873,29 @@ export default function CanvasGarden() {
       <div className="relative h-[calc(100vh-100px)] overflow-hidden">
         <div className="relative z-10 h-full">
           <div className="flex h-full p-4 justify-center items-center">
-            <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 flex items-center justify-center garden-canvas" style={{width: `${GRID_WIDTH * CELL_SIZE + 40}px`, height: `${GRID_HEIGHT * CELL_SIZE + 40}px`}}>
-              <canvas
-                ref={canvasRef}
-                width={GRID_WIDTH * CELL_SIZE}
-                height={GRID_HEIGHT * CELL_SIZE}
-                onClick={handleCanvasClick}
-                onTouchStart={handleCanvasClick}
-                onMouseMove={handleCanvasMouseMove}
-                className="border-2 border-green-400/30 rounded-lg cursor-pointer bg-green-900/20"
-                style={{ touchAction: 'manipulation' }}
-              />
-            </div>
+            <CinematicPlotFocus
+              isActive={isCinemaMode}
+              focusPosition={focusPosition}
+              cellSize={CELL_SIZE}
+              gridWidth={GRID_WIDTH}
+              gridHeight={GRID_HEIGHT}
+              onAnimationComplete={onCinemaAnimationComplete}
+              onReturnComplete={exitCinemaMode}
+              onCancel={exitCinemaMode}
+            >
+              <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 flex items-center justify-center garden-canvas" style={{width: `${GRID_WIDTH * CELL_SIZE + 40}px`, height: `${GRID_HEIGHT * CELL_SIZE + 40}px`}}>
+                <canvas
+                  ref={canvasRef}
+                  width={GRID_WIDTH * CELL_SIZE}
+                  height={GRID_HEIGHT * CELL_SIZE}
+                  onClick={handleCanvasClick}
+                  onTouchStart={handleCanvasClick}
+                  onMouseMove={handleCanvasMouseMove}
+                  className="border-2 border-green-400/30 rounded-lg cursor-pointer bg-green-900/20"
+                  style={{ touchAction: 'manipulation' }}
+                />
+              </div>
+            </CinematicPlotFocus>
           </div>
         </div>
       </div>
@@ -1034,78 +1010,38 @@ export default function CanvasGarden() {
         document.body
       )}
 
-      {showPlantCreator && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 max-w-md w-full mx-4 modal-container"
-          >
-            <h3 className="text-xl font-bold text-white mb-4 text-center">Create New Task</h3>
-            <p className="text-green-100 text-sm text-center mb-6">
-              Plant a seed for your new goal and watch it grow as you work!
-            </p>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-white text-sm font-medium mb-2">Task Name</label>
-                <input
-                  type="text"
-                  value={plantForm.name}
-                  onChange={(e) => setPlantForm({...plantForm, name: e.target.value})}
-                  placeholder="e.g., Learn React, Write thesis, Daily workout..."
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500"
-                  maxLength={100}
-                  autoFocus
-                />
-              </div>
+      <CinematicPlantCreator
+        isOpen={showPlantCreator}
+        position={pendingPlantPosition}
+        onClose={handlePlantCreatorClose}
+        onCreatePlant={createPlant}
+      />
+      
 
-              
-              <div>
-                <label className="block text-white text-sm font-medium mb-2">Task Category</label>
-                <select
-                  value={plantForm.category}
-                  onChange={(e) => setPlantForm({...plantForm, category: e.target.value})}
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-                >
-                  <option value="" className="bg-gray-800">What type of task is this?</option>
-                  {PRODUCTIVITY_CATEGORIES.map(cat => (
-                    <option key={cat.value} value={cat.value} className="bg-gray-800">
-                      {cat.label} - {cat.description}
-                    </option>
-                  ))}
-                </select>
-                {plantForm.category && (
-                  <p className="text-green-200 text-xs mt-1">
-                    Your task will grow as a {PRODUCTIVITY_CATEGORIES.find(c => c.value === plantForm.category)?.label.toLowerCase()} plant
-                  </p>
-                )}
-              </div>
+      {Array.from(activeGrowthAnimations.entries()).map(([plantId, animation]) => (
+        <PlantGrowthEffects
+          key={plantId}
+          plantId={plantId}
+          isGrowing={true}
+          newStage={animation.newStage}
+          position={animation.position}
+          cellSize={CELL_SIZE}
+          onAnimationComplete={() => onGrowthAnimationComplete(plantId)}
+        />
+      ))}
 
-            </div>
-            
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={cancelPlantCreation}
-                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-medium transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createPlant}
-                disabled={!isFormValid}
-                className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-                  isFormValid 
-                    ? 'bg-green-600 hover:bg-green-700 text-white' 
-                    : 'bg-gray-500 text-gray-300 cursor-not-allowed'
-                }`}
-              >
-Plant Task
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {Array.from(activeXPAnimations.entries()).map(([plantId, animation]) => (
+        <XPGainEffects
+          key={plantId}
+          plantId={plantId}
+          xpGained={animation.xpGained}
+          position={animation.position}
+          currentXP={animation.currentXP}
+          maxXP={animation.maxXP}
+          showInHeader={animation.showInHeader}
+          onAnimationComplete={() => onXPAnimationComplete(plantId)}
+        />
+      ))}
       
       {loading && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
@@ -1409,6 +1345,176 @@ Plant Task
         </div>,
         document.body
       )}
+
+      {/* Trophy/Completed Plant Dialog */}
+      {showTrophyDialog && selectedPlant && mode === 'tasks' && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md bg-white/10 backdrop-blur-md rounded-xl shadow-2xl border border-white/20 modal-container"
+          >
+            <div className="flex justify-between items-center p-6 border-b border-white/20">
+              <div className="flex items-center space-x-3">
+                <Trophy className="w-6 h-6 text-yellow-400" />
+                <h2 className="text-xl font-bold text-white">Trophy Plant</h2>
+              </div>
+              <button
+                onClick={() => {
+                  setShowTrophyDialog(false)
+                  setSelectedPlant(null)
+                }}
+                className="text-white/70 hover:text-white text-2xl font-bold"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <div className="text-center mb-6">
+                <div className="flex justify-center mb-4">
+                  <Trophy className="w-12 h-12 text-yellow-400" />
+                </div>
+                <h3 className="text-lg font-bold text-white mb-2">
+                  {selectedPlant.name}
+                </h3>
+                <p className="text-green-200 text-sm">Task Completed Successfully!</p>
+              </div>
+
+              <div className="bg-white/5 rounded-lg p-4 mb-6">
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Status:</span>
+                    <span className="text-yellow-400 font-medium">Trophy Plant</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Stage:</span>
+                    <span className="text-white">{selectedPlant.stage}/5 (Complete)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Total XP:</span>
+                    <span className="text-white">{selectedPlant.experience_points}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Task Level:</span>
+                    <span className="text-white">{selectedPlant.task_level || 1}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Best Streak:</span>
+                    <span className="text-white">{selectedPlant.current_streak || 0} days</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-300">Category:</span>
+                    <span className="text-white capitalize">{selectedPlant.type}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4 mb-6">
+                <div className="flex items-start space-x-2">
+                  <Info className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-xs text-green-200">
+                    <p className="font-medium mb-1">Auto-Harvest Information</p>
+                    <p>Trophy plants are automatically harvested after 6 hours of completion or when you sign out. This frees up space for new tasks while preserving your achievement records.</p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setShowTrophyDialog(false)
+                  setSelectedPlant(null)
+                }}
+                className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+              >
+                Acknowledge Achievement
+              </button>
+            </div>
+          </motion.div>
+        </div>,
+        document.body
+      )}
+
+      {/* Task Mode Hover Info Box */}
+      <AnimatePresence>
+        {hoveredPlant && mode === 'tasks' && createPortal(
+          <motion.div
+            key="task-hover-info"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.2 }}
+            className="fixed z-50 pointer-events-none"
+            style={{
+              left: '50%',
+              top: '20%',
+              transform: 'translateX(-50%)'
+            }}
+          >
+          <div className="bg-black/80 backdrop-blur-sm rounded-lg p-4 border border-white/20 max-w-sm">
+            <div className="flex items-center space-x-3 mb-3">
+              <div className={`w-3 h-3 rounded-full ${
+                hoveredPlant.decay_status === 'dead' ? 'bg-red-500' :
+                hoveredPlant.decay_status === 'severely_wilted' || hoveredPlant.decay_status === 'wilted' ? 'bg-yellow-500' :
+                hoveredPlant.stage >= 5 ? 'bg-purple-500' : 'bg-green-500'
+              }`} />
+              <h3 className="text-white font-semibold text-sm">
+                {hoveredPlant.name}
+              </h3>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                hoveredPlant.type === 'work' ? 'bg-blue-500/20 text-blue-200' :
+                hoveredPlant.type === 'study' ? 'bg-green-500/20 text-green-200' :
+                hoveredPlant.type === 'exercise' ? 'bg-red-500/20 text-red-200' :
+                'bg-purple-500/20 text-purple-200'
+              }`}>
+                {hoveredPlant.type}
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="text-gray-300">
+                <span className="text-white font-medium">Stage:</span> {hoveredPlant.stage}/5
+              </div>
+              <div className="text-gray-300">
+                <span className="text-white font-medium">Level:</span> {hoveredPlant.task_level || 1}
+              </div>
+              <div className="text-gray-300">
+                <span className="text-white font-medium">XP:</span> {hoveredPlant.experience_points}
+              </div>
+              <div className="text-gray-300">
+                <span className="text-white font-medium">Streak:</span> {hoveredPlant.current_streak || 0}
+              </div>
+            </div>
+
+            <div className="mt-3 pt-2 border-t border-white/10">
+              <div className="text-xs text-gray-300">
+                <span className="text-white font-medium">Status:</span>{' '}
+                <span className={`${
+                  hoveredPlant.decay_status === 'dead' ? 'text-red-400' :
+                  hoveredPlant.decay_status === 'severely_wilted' || hoveredPlant.decay_status === 'wilted' ? 'text-yellow-400' :
+                  hoveredPlant.stage >= 5 ? 'text-purple-400' : 'text-green-400'
+                }`}>
+                  {hoveredPlant.decay_status === 'dead' ? 'Dead - Needs attention!' :
+                   hoveredPlant.decay_status === 'severely_wilted' ? 'Severely wilted' :
+                   hoveredPlant.decay_status === 'wilted' ? 'Wilted' :
+                   hoveredPlant.stage >= 5 ? 'Ready to harvest' : 'Healthy & growing'}
+                </span>
+              </div>
+              {hoveredPlant.lastWatered && (
+                <div className="text-xs text-gray-400 mt-1">
+                  Last worked: {new Date(hoveredPlant.lastWatered).toLocaleDateString()}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-2 text-center">
+              <span className="text-xs text-green-300">Click to log work hours</span>
+            </div>
+          </div>
+          </motion.div>,
+          document.body
+        )}
+      </AnimatePresence>
     </div>
   )
 }

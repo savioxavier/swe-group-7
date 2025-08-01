@@ -9,7 +9,7 @@ class AutoHarvestService:
     
     @staticmethod
     async def check_and_harvest_completed_tasks(user_id: str = None, auth_supabase=None):
-        """Check for completed tasks that should be auto-harvested after 1 day"""
+        """Check for completed tasks that should be auto-harvested after 6 hours"""
         client = auth_supabase or supabase
         try:
             # Get all completed plants
@@ -30,9 +30,9 @@ class AutoHarvestService:
                 else:
                     completion_dt = completion_date
                 
-                # Check if it's been 1 day since completion
-                days_since_completion = (datetime.now() - completion_dt).days
-                if days_since_completion >= 1:
+                # Check if it's been 6 hours since completion
+                hours_since_completion = (datetime.now() - completion_dt).total_seconds() / 3600
+                if hours_since_completion >= 6:
                     # Auto-harvest this plant
                     client.table("plants").update({
                         "task_status": "harvested",
@@ -75,9 +75,9 @@ class AutoHarvestService:
                 raise HTTPException(status_code=404, detail="Plant not found")
             
             return {
-                "message": "Task completed successfully! It will be auto-harvested in 1 day.",
+                "message": "Task completed successfully! It will be auto-harvested in 6 hours.",
                 "completion_date": completion_date.isoformat(),
-                "auto_harvest_date": (completion_date + timedelta(days=1)).isoformat()
+                "auto_harvest_date": (completion_date + timedelta(hours=6)).isoformat()
             }
             
         except HTTPException:

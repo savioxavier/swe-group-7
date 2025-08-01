@@ -7,8 +7,9 @@ import os
 
 from ..config import supabase
 from ..models import UserRegister, UserLogin, Token, UserResponse, RegistrationResponse
-from ..services.auth import get_current_user_id
+from ..services.auth import get_current_user_id, get_authenticated_supabase
 from ..services.xp_service import XPService
+from ..services.auto_harvest_service import AutoHarvestService
 
 router = APIRouter()
 security = HTTPBearer()
@@ -167,3 +168,20 @@ async def apply_daily_decay(credentials: HTTPAuthorizationCredentials = Depends(
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to apply daily decay: {str(e)}")
+
+@router.post("/logout")
+async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Logout user and trigger auto-harvest for their trophy plants"""
+    try:
+        auth_supabase, user_id = await get_authenticated_supabase(credentials)
+        
+        # Trigger auto-harvest for this user's trophy plants
+        await AutoHarvestService.check_and_harvest_completed_tasks(user_id, auth_supabase)
+        
+        # Sign out the user
+        auth_supabase.auth.sign_out()
+        
+        return {"message": "Logged out successfully. Trophy plants have been auto-harvested."}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")

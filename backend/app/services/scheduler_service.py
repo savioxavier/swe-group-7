@@ -24,7 +24,7 @@ class SchedulerService:
         
         self.scheduler.add_job(
             func=self.run_auto_harvest,
-            trigger=CronTrigger(hour=0, minute=5),
+            trigger=CronTrigger(minute=0),  # Run every hour at minute 0
             id='auto_harvest',
             name='Auto Harvest Completed Tasks',
             replace_existing=True
