@@ -3,6 +3,7 @@ from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime, date
 import logging
 from .plant_service import PlantService
+from .auto_harvest_service import AutoHarvestService
 from ..config import supabase
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,14 @@ class SchedulerService:
             trigger=CronTrigger(hour=0, minute=1),
             id='daily_decay',
             name='Daily XP Decay',
+            replace_existing=True
+        )
+        
+        self.scheduler.add_job(
+            func=self.run_auto_harvest,
+            trigger=CronTrigger(hour=0, minute=5),
+            id='auto_harvest',
+            name='Auto Harvest Completed Tasks',
             replace_existing=True
         )
 
@@ -39,6 +48,14 @@ class SchedulerService:
             
         except Exception as e:
             logger.error(f"Daily decay process failed: {str(e)}")
+
+    async def run_auto_harvest(self):
+        try:
+            logger.info("Starting auto-harvest process")
+            await AutoHarvestService.check_and_harvest_completed_tasks()
+            logger.info("Auto-harvest process completed")
+        except Exception as e:
+            logger.error(f"Auto-harvest process failed: {str(e)}")
 
     def start(self):
         if not self.scheduler.running:

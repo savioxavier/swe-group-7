@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { Plus, Leaf, LogOut, Zap, Info, BarChart3 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { api } from '../lib/api'
-import { PlantCreate, PlantResponse, UserProgressResponse } from '../types'
+import { PlantCreate, PlantResponse } from '../types'
 
 interface Plant {
   id: string
@@ -23,6 +23,7 @@ interface Plant {
   task_level?: number
   task_status?: 'active' | 'completed' | 'harvested'
   completion_date?: Date
+  animationStage?: number
 }
 
 const GRID_WIDTH = 6
@@ -73,7 +74,7 @@ const getNextAvailablePosition = (existingPlants: Plant[]): { x: number, y: numb
     }
   }
   
-  return null // No available positions
+  return null
 }
 const getPlantSprite = (plant: Plant, stage: number): string => {
   const spriteType = plant.plantSprite || getRandomPlantForCategory(plant.type)
@@ -106,22 +107,22 @@ const getPlantSprite = (plant: Plant, stage: number): string => {
 
 
 const convertApiPlantToLocal = (apiPlant: PlantResponse): Plant => ({
-  id: apiPlant.id,
-  name: apiPlant.name,
-  task_description: (apiPlant as any).task_description,
-  type: (apiPlant.productivity_category || apiPlant.plant_type || 'work') as Plant['type'],
-  x: apiPlant.position_x,
-  y: apiPlant.position_y,
-  stage: Math.floor(apiPlant.growth_level / 20),
-  experience_points: apiPlant.experience_points,
-  growth_level: apiPlant.growth_level,
-  lastWatered: new Date(apiPlant.updated_at),
-  plantSprite: apiPlant.plant_sprite,
-  decay_status: apiPlant.decay_status,
-  current_streak: apiPlant.current_streak,
-  task_level: apiPlant.task_level,
-  task_status: (apiPlant as any).task_status || 'active',
-  completion_date: (apiPlant as any).completion_date ? new Date((apiPlant as any).completion_date) : undefined
+    id: apiPlant.id,
+    name: apiPlant.name,
+    task_description: (apiPlant as any).task_description,
+    type: (apiPlant.productivity_category || apiPlant.plant_type || 'work') as Plant['type'],
+    x: apiPlant.position_x,
+    y: apiPlant.position_y,
+    stage: Math.min(5, Math.floor((apiPlant.growth_level || 0) / 20)),
+    experience_points: apiPlant.experience_points,
+    growth_level: apiPlant.growth_level,
+    lastWatered: new Date(apiPlant.updated_at),
+    plantSprite: apiPlant.plant_sprite,
+    decay_status: apiPlant.decay_status,
+    current_streak: apiPlant.current_streak,
+    task_level: apiPlant.task_level,
+    task_status: (apiPlant as any).task_status || 'active',
+    completion_date: (apiPlant as any).completion_date ? new Date((apiPlant as any).completion_date) : undefined
 })
 
 export default function CanvasGarden() {
@@ -129,25 +130,30 @@ export default function CanvasGarden() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [plants, setPlants] = useState<Plant[]>([])
   const [loading, setLoading] = useState(true)
-  const [userProgress, setUserProgress] = useState<UserProgressResponse | null>(null)
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null)
-  const [isPlanting, setIsPlanting] = useState(false)
   const [mode, setMode] = useState<'plant' | 'info' | 'tasks'>('plant')
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null)
   const [hoveredPlant, setHoveredPlant] = useState<Plant | null>(null)
   const [showPlantCreator, setShowPlantCreator] = useState(false)
   const [pendingPlantPosition, setPendingPlantPosition] = useState<{x: number, y: number} | null>(null)
   const [plantForm, setPlantForm] = useState({
-    name: '', // Task name
-    description: '', // Task description  
+    name: '',
     category: ''
   })
-  const [showHoursInput, setShowHoursInput] = useState(false)
-  const [hoursWorked, setHoursWorked] = useState('')
   const [loadedSprites, setLoadedSprites] = useState<Map<string, HTMLImageElement>>(new Map())
   
   const [submissionMessage, setSubmissionMessage] = useState('')
   const [showSuccessMessage, setShowSuccessMessage] = useState(false)
+  
+  const [hasShownDailyPanel, setHasShownDailyPanel] = useState(false)
+  const [shouldAutoShowTasks, setShouldAutoShowTasks] = useState(false)
+  const [showTaskPanel, setShowTaskPanel] = useState(false)
+  const [focusedPlantId, setFocusedPlantId] = useState<string | null>(null)
+  const [showWorkDialog, setShowWorkDialog] = useState(false)
+  const [workHours, setWorkHours] = useState('')
+  
+  const [growingPlants, setGrowingPlants] = useState<Set<string>>(new Set())
+  const [xpAnimations, setXpAnimations] = useState<Map<string, number>>(new Map())
 
   const loadSprite = useCallback((spritePath: string): Promise<HTMLImageElement> => {
     return new Promise((resolve, reject) => {
@@ -180,16 +186,10 @@ export default function CanvasGarden() {
 
   const getPlantColor = (category: string): string => {
     const colors: Record<string, string> = {
-      coding: '#3b82f6',
-      writing: '#8b5cf6',
-      exercise: '#ef4444',
-      learning: '#10b981',
       work: '#6b7280',
-      creative: '#f59e0b',
-      reading: '#06b6d4',
-      music: '#ec4899',
-      language: '#84cc16',
-      business: '#eab308'
+      study: '#10b981',
+      exercise: '#ef4444',
+      creative: '#f59e0b'
     }
     return colors[category] || '#6b7280'
   }
@@ -229,45 +229,25 @@ export default function CanvasGarden() {
           }
         }
       } else {
-        ctx.fillStyle = '#4ade80'
-        ctx.fillRect(0, 0, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE)
-        
-        ctx.strokeStyle = '#2d5016'
-        ctx.lineWidth = 2
-        for (let x = 1; x < GRID_WIDTH; x++) {
-          ctx.beginPath()
-          ctx.moveTo(x * CELL_SIZE, 0)
-          ctx.lineTo(x * CELL_SIZE, GRID_HEIGHT * CELL_SIZE)
-          ctx.stroke()
-        }
-        for (let y = 1; y < GRID_HEIGHT; y++) {
-          ctx.beginPath()
-          ctx.moveTo(0, y * CELL_SIZE)
-          ctx.lineTo(GRID_WIDTH * CELL_SIZE, y * CELL_SIZE)
-          ctx.stroke()
-        }
+        drawFallbackGrass(ctx)
       }
     } catch {
-      ctx.fillStyle = '#4ade80'
-      ctx.fillRect(0, 0, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE)
+      drawFallbackGrass(ctx)
     }
 
-    // Show plantable positions when in planting mode
-    if (isPlanting) {
+    if (mode === 'plant') {
       PLANTABLE_POSITIONS.forEach(position => {
         const isOccupied = plants.some(plant => plant.x === position.x && plant.y === position.y)
         if (!isOccupied) {
           const x = position.x * CELL_SIZE
           const y = position.y * CELL_SIZE
           
-          // Draw glowing border for available planting spots
           ctx.strokeStyle = '#22c55e'
           ctx.lineWidth = 3
           ctx.setLineDash([5, 5])
           ctx.strokeRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4)
           ctx.setLineDash([])
           
-          // Add a subtle green overlay
           ctx.fillStyle = 'rgba(34, 197, 94, 0.1)'
           ctx.fillRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4)
         }
@@ -298,27 +278,7 @@ export default function CanvasGarden() {
         })
       }
     } catch {
-      plants.forEach(plant => {
-        const plantX = plant.x * CELL_SIZE
-        const plantY = plant.y * CELL_SIZE
-        ctx.fillStyle = '#8B4513'
-        ctx.fillRect(plantX, plantY, CELL_SIZE, CELL_SIZE)
-        
-        ctx.fillStyle = '#5d4037'
-        if (plant.x < GRID_WIDTH - 1) {
-          for (let i = 8; i < CELL_SIZE - 8; i += 8) {
-            ctx.fillRect(plantX + CELL_SIZE - 2, plantY + i, 4, 4)
-          }
-        }
-        if (plant.y < GRID_HEIGHT - 1) {
-          for (let i = 8; i < CELL_SIZE - 8; i += 8) {
-            ctx.fillRect(plantX + i, plantY + CELL_SIZE - 2, 4, 4)
-          }
-        }
-        if (plant.x < GRID_WIDTH - 1 && plant.y < GRID_HEIGHT - 1) {
-          ctx.fillRect(plantX + CELL_SIZE - 2, plantY + CELL_SIZE - 2, 4, 4)
-        }
-      })
+      drawFallbackDirt(ctx, plants)
     }
 
     for (const plant of plants) {
@@ -326,11 +286,10 @@ export default function CanvasGarden() {
       const centerY = plant.y * CELL_SIZE + CELL_SIZE / 2
 
       try {
-        const spriteImg = await getPlantSpriteImage(plant, plant.stage)
+        const spriteImg = await getPlantSpriteImage(plant, plant.animationStage || plant.stage)
         if (spriteImg) {
           ctx.save()
           
-          // Apply decay visual effects based on plant health
           if (plant.decay_status === 'wilted') {
             ctx.filter = 'contrast(0.8) saturate(0.6) brightness(0.9) sepia(0.3)'
           } else if (plant.decay_status === 'severely_wilted') {
@@ -352,16 +311,10 @@ export default function CanvasGarden() {
           
           ctx.restore()
         } else {
-          ctx.fillStyle = getPlantColor(plant.type)
-          ctx.beginPath()
-          ctx.arc(centerX, centerY, 16 + plant.stage * 4, 0, 2 * Math.PI)
-          ctx.fill()
+          drawFallbackPlant(ctx, centerX, centerY, plant)
         }
       } catch {
-        ctx.fillStyle = getPlantColor(plant.type)
-        ctx.beginPath()
-        ctx.arc(centerX, centerY, 16 + plant.stage * 4, 0, 2 * Math.PI)
-        ctx.fill()
+        drawFallbackPlant(ctx, centerX, centerY, plant)
       }
 
       if (selectedPlant?.id === plant.id) {
@@ -379,12 +332,65 @@ export default function CanvasGarden() {
       ctx.fillStyle = getPlantColor(plant.type)
       ctx.fillRect(plant.x * CELL_SIZE + 2, plant.y * CELL_SIZE + 2, 8, 8)
 
-      // Draw plant info overlay directly on the plant in info mode
+      if (growingPlants.has(plant.id)) {
+        ctx.save()
+        ctx.globalAlpha = 0.8
+        
+        const time = Date.now() * 0.005
+        const glowRadius = 30 + Math.sin(time) * 10
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, glowRadius)
+        gradient.addColorStop(0, 'rgba(34, 197, 94, 0.8)')
+        gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.4)')
+        gradient.addColorStop(1, 'rgba(34, 197, 94, 0)')
+        
+        ctx.fillStyle = gradient
+        ctx.fillRect(centerX - glowRadius, centerY - glowRadius, glowRadius * 2, glowRadius * 2)
+        
+        for (let i = 0; i < 6; i++) {
+          const angle = (time + i * Math.PI / 3) % (Math.PI * 2)
+          const sparkleX = centerX + Math.cos(angle) * (20 + Math.sin(time * 2) * 5)
+          const sparkleY = centerY + Math.sin(angle) * (20 + Math.sin(time * 2) * 5)
+          
+          ctx.fillStyle = '#fbbf24'
+          ctx.beginPath()
+          ctx.arc(sparkleX, sparkleY, 2, 0, 2 * Math.PI)
+          ctx.fill()
+        }
+        
+        ctx.restore()
+      }
+      
+      if (xpAnimations.has(plant.id)) {
+        const xpGained = xpAnimations.get(plant.id)!
+        ctx.save()
+        
+        ctx.fillStyle = '#22c55e'
+        ctx.font = 'bold 14px Arial'
+        ctx.textAlign = 'center'
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
+        ctx.shadowBlur = 2
+        ctx.fillText(`+${xpGained} XP`, centerX, centerY - 40)
+        
+        ctx.restore()
+      }
+      
+      if (plant.animationStage !== undefined && growingPlants.has(plant.id)) {
+        ctx.save()
+        
+        ctx.fillStyle = '#fbbf24'
+        ctx.font = 'bold 12px Arial'
+        ctx.textAlign = 'center'
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.7)'
+        ctx.shadowBlur = 3
+        ctx.fillText(`Growing... Stage ${plant.animationStage}/5`, centerX, centerY - 50)
+        
+        ctx.restore()
+      }
+
       if (mode === 'info' && (hoveredPlant?.id === plant.id || selectedPlant?.id === plant.id)) {
         const cellX = plant.x * CELL_SIZE
         const cellY = plant.y * CELL_SIZE
         
-        // Semi-transparent overlay on the entire cell
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
         ctx.fillRect(cellX, cellY, CELL_SIZE, CELL_SIZE)
         
@@ -403,18 +409,72 @@ export default function CanvasGarden() {
       }
     }
 
-    if (isPlanting && mousePos) {
+    if (mode === 'plant' && mousePos) {
       const gridX = Math.floor(mousePos.x / CELL_SIZE)
       const gridY = Math.floor(mousePos.y / CELL_SIZE)
       
-      if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
-        ctx.globalAlpha = 0.5
-        ctx.fillStyle = '#10b981'
-        ctx.fillRect(gridX * CELL_SIZE, gridY * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-        ctx.globalAlpha = 1
+      if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT && isPositionPlantable(gridX, gridY)) {
+        const isOccupied = plants.some(plant => plant.x === gridX && plant.y === gridY)
+        if (!isOccupied) {
+          ctx.globalAlpha = 0.5
+          ctx.fillStyle = '#10b981'
+          ctx.fillRect(gridX * CELL_SIZE, gridY * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+          ctx.globalAlpha = 1
+        }
       }
     }
-  }, [plants, selectedPlant, isPlanting, mousePos, hoveredPlant, mode, getPlantSpriteImage, loadSprite])
+  }, [plants, selectedPlant, mousePos, hoveredPlant, mode, getPlantSpriteImage, loadSprite])
+
+  const drawFallbackGrass = (ctx: CanvasRenderingContext2D) => {
+    ctx.fillStyle = '#4ade80'
+    ctx.fillRect(0, 0, GRID_WIDTH * CELL_SIZE, GRID_HEIGHT * CELL_SIZE)
+    
+    ctx.strokeStyle = '#2d5016'
+    ctx.lineWidth = 2
+    for (let x = 1; x < GRID_WIDTH; x++) {
+      ctx.beginPath()
+      ctx.moveTo(x * CELL_SIZE, 0)
+      ctx.lineTo(x * CELL_SIZE, GRID_HEIGHT * CELL_SIZE)
+      ctx.stroke()
+    }
+    for (let y = 1; y < GRID_HEIGHT; y++) {
+      ctx.beginPath()
+      ctx.moveTo(0, y * CELL_SIZE)
+      ctx.lineTo(GRID_WIDTH * CELL_SIZE, y * CELL_SIZE)
+      ctx.stroke()
+    }
+  }
+
+  const drawFallbackDirt = (ctx: CanvasRenderingContext2D, plants: Plant[]) => {
+    plants.forEach(plant => {
+      const plantX = plant.x * CELL_SIZE
+      const plantY = plant.y * CELL_SIZE
+      ctx.fillStyle = '#8B4513'
+      ctx.fillRect(plantX, plantY, CELL_SIZE, CELL_SIZE)
+      
+      ctx.fillStyle = '#5d4037'
+      if (plant.x < GRID_WIDTH - 1) {
+        for (let i = 8; i < CELL_SIZE - 8; i += 8) {
+          ctx.fillRect(plantX + CELL_SIZE - 2, plantY + i, 4, 4)
+        }
+      }
+      if (plant.y < GRID_HEIGHT - 1) {
+        for (let i = 8; i < CELL_SIZE - 8; i += 8) {
+          ctx.fillRect(plantX + i, plantY + CELL_SIZE - 2, 4, 4)
+        }
+      }
+      if (plant.x < GRID_WIDTH - 1 && plant.y < GRID_HEIGHT - 1) {
+        ctx.fillRect(plantX + CELL_SIZE - 2, plantY + CELL_SIZE - 2, 4, 4)
+      }
+    })
+  }
+
+  const drawFallbackPlant = (ctx: CanvasRenderingContext2D, centerX: number, centerY: number, plant: Plant) => {
+    ctx.fillStyle = getPlantColor(plant.type)
+    ctx.beginPath()
+    ctx.arc(centerX, centerY, 16 + (plant.animationStage || plant.stage) * 4, 0, 2 * Math.PI)
+    ctx.fill()
+  }
 
   const handleCanvasMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
@@ -424,7 +484,7 @@ export default function CanvasGarden() {
     const x = event.clientX - rect.left
     const y = event.clientY - rect.top
 
-    if (isPlanting) {
+    if (mode === 'plant') {
       setMousePos({ x, y })
     }
 
@@ -436,13 +496,22 @@ export default function CanvasGarden() {
     }
   }
 
-  const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current
     if (!canvas) return
 
     const rect = canvas.getBoundingClientRect()
-    const x = event.clientX - rect.left
-    const y = event.clientY - rect.top
+    let x: number, y: number
+    
+    if ('touches' in event && event.touches.length > 0) {
+      x = event.touches[0].clientX - rect.left
+      y = event.touches[0].clientY - rect.top
+    } else if ('clientX' in event) {
+      x = event.clientX - rect.left
+      y = event.clientY - rect.top
+    } else {
+      return
+    }
 
     const gridX = Math.floor(x / CELL_SIZE)
     const gridY = Math.floor(y / CELL_SIZE)
@@ -451,63 +520,53 @@ export default function CanvasGarden() {
       const clickedPlant = plants.find(p => p.x === gridX && p.y === gridY)
 
       if (mode === 'plant') {
-        if (isPlanting) {
-          if (!clickedPlant && isPositionPlantable(gridX, gridY)) {
+        if (clickedPlant) {
+          setSelectedPlant(clickedPlant)
+        } else {
+          setSelectedPlant(null)
+          if (isPositionPlantable(gridX, gridY)) {
             setPendingPlantPosition({ x: gridX, y: gridY })
             setShowPlantCreator(true)
             setPlantForm({ name: '', description: '', category: '' })
           }
-          setIsPlanting(false)
-        } else if (clickedPlant) {
-          setSelectedPlant(clickedPlant)
-          // Show task details instead of daily panel for now
-          // Will implement task-based daily panel later
-        } else {
-          setSelectedPlant(null)
         }
       } else if (mode === 'info') {
         setSelectedPlant(clickedPlant || null)
+      } else if (mode === 'tasks' && clickedPlant) {
+        setSelectedPlant(clickedPlant)
+        setShowWorkDialog(true)
       }
-    } else if (!isPlanting && mode === 'plant') {
+    } else if (mode === 'plant') {
       setSelectedPlant(null)
-    }
-  }
-
-
-  const workOnTask = async () => {
-    if (!selectedPlant || !hoursWorked) return
-    try {
-      const hours = parseFloat(hoursWorked)
-      if (hours <= 0 || hours > 24) {
-        alert('Please enter a valid number of hours (0.1 - 24)')
-        return
-      }
-      const workData = { plant_id: selectedPlant.id, hours_worked: hours }
-      await api.logTaskWork(workData)
-      await loadPlants()
-      await loadUserProgress()
-      setHoursWorked('')
-      setShowHoursInput(false)
-      const updatedPlant = plants.find(p => p.id === selectedPlant.id)
-      if (updatedPlant) {
-        setSelectedPlant(updatedPlant)
-      }
-    } catch (error) {
-      console.error('Failed to log work:', error)
-      alert('Failed to log work. Please try again.')
     }
   }
 
 
   const logWork = async (plantId: string, hours: number) => {
     try {
+      const plantBefore = plants.find(p => p.id === plantId)
+      const stageBefore = plantBefore?.stage || 0
+      
       await api.logTaskWork({
         plant_id: plantId,
         hours_worked: hours
       })
       
-      await loadPlants()
-      await loadUserProgress()
+      const xpGained = hours * 100
+      
+      triggerXPAnimation(plantId, xpGained)
+      
+      const apiPlants = await api.getPlants()
+      const updatedPlants = apiPlants.map(convertApiPlantToLocal)
+      setPlants(updatedPlants)
+      
+      const plantAfter = updatedPlants.find(p => p.id === plantId)
+      if (plantAfter && plantAfter.stage > stageBefore) {
+        setTimeout(() => {
+          triggerGrowthAnimation(plantId)
+        }, 1000)
+      }
+      
     } catch (error) {
       console.error('Failed to log work:', error)
       alert('Failed to log work. Please try again.')
@@ -529,7 +588,6 @@ export default function CanvasGarden() {
     try {
       await api.harvestPlant(selectedPlant.id)
       await loadPlants()
-      await loadUserProgress()
       setSelectedPlant(null)
     } catch (error) {
       console.error('Failed to harvest plant:', error)
@@ -548,7 +606,7 @@ export default function CanvasGarden() {
       try {
         const selectedSprite = getRandomPlantForCategory(plantForm.category)
         const plantData: PlantCreate = {
-          name: plantForm.name.trim(), // This is now the task name
+          name: plantForm.name.trim(),
           productivity_category: plantForm.category as 'work' | 'study' | 'exercise' | 'creative',
           plant_sprite: selectedSprite,
           position_x: pendingPlantPosition.x,
@@ -559,7 +617,7 @@ export default function CanvasGarden() {
         setPlants([...plants, newPlant])
         setShowPlantCreator(false)
         setPendingPlantPosition(null)
-        setPlantForm({ name: '', description: '', category: '' })
+        setPlantForm({ name: '', category: '' })
       } catch (error) {
         console.error('Failed to create plant:', error)
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -571,7 +629,7 @@ export default function CanvasGarden() {
   const cancelPlantCreation = () => {
     setShowPlantCreator(false)
     setPendingPlantPosition(null)
-    setPlantForm({ name: '', description: '', category: '' })
+    setPlantForm({ name: '', category: '' })
   }
 
   const isFormValid = plantForm.name.trim() && plantForm.category
@@ -590,30 +648,130 @@ export default function CanvasGarden() {
     }
   }, [token])
 
-  const loadUserProgress = useCallback(async () => {
-    if (!token) return
-    try {
-      const progress = await api.getUserProgress()
-      setUserProgress(progress)
-    } catch (error) {
-      console.error('Failed to load user progress:', error)
-    }
-  }, [token])
 
   useEffect(() => {
     loadPlants()
-    loadUserProgress()
-  }, [loadPlants, loadUserProgress])
-
-  // Remove auto-show since tasks are now in main interface
+  }, [loadPlants])
 
   useEffect(() => {
-    drawGarden()
-  }, [drawGarden])
+    if (mode !== 'tasks') {
+      setShowWorkDialog(false)
+    }
+  }, [mode])
+
+  const shouldShowDailyTasks = useCallback(() => {
+    if (!user || hasShownDailyPanel) return false
+    
+    const today = new Date().toDateString()
+    const skippedToday = localStorage.getItem(`taskPanelSkipped_${today}`)
+    if (skippedToday) return false
+    
+    const workedToday = plants.some(plant => {
+      if (!plant.lastWatered) return false
+      return new Date(plant.lastWatered).toDateString() === today
+    })
+    
+    return !workedToday
+  }, [user, hasShownDailyPanel, plants])
+
+  useEffect(() => {
+    if (user && plants.length > 0 && shouldShowDailyTasks()) {
+      setShouldAutoShowTasks(true)
+      setShowTaskPanel(true)
+      setMode('tasks')
+      setHasShownDailyPanel(true)
+      setSelectedPlant(null)
+      setShowWorkDialog(false)
+    }
+  }, [user, plants, shouldShowDailyTasks])
+
+  const skipDailyTasks = () => {
+    const today = new Date().toDateString()
+    localStorage.setItem(`taskPanelSkipped_${today}`, 'true')
+    setShouldAutoShowTasks(false)
+    setShowTaskPanel(false)
+    setMode('plant')
+  }
+
+  const triggerXPAnimation = (plantId: string, xpGained: number) => {
+    setXpAnimations(prev => new Map(prev).set(plantId, xpGained))
+    setTimeout(() => {
+      setXpAnimations(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(plantId)
+        return newMap
+      })
+    }, 2000)
+  }
+
+  const triggerGrowthAnimation = (plantId: string) => {
+    setGrowingPlants(prev => new Set(prev).add(plantId))
+    
+    const plant = plants.find(p => p.id === plantId)
+    if (plant) {
+      const finalStage = plant.stage
+      
+      if (finalStage > 1) {
+        let animationStage = 1
+        const stageInterval = setInterval(() => {
+          if (animationStage <= finalStage) {
+            setPlants(prevPlants => 
+              prevPlants.map(p => 
+                p.id === plantId 
+                  ? { ...p, animationStage: animationStage }
+                  : p
+              )
+            )
+            animationStage++
+          } else {
+            clearInterval(stageInterval)
+            setTimeout(() => {
+              setPlants(prevPlants => 
+                prevPlants.map(p => 
+                  p.id === plantId 
+                    ? { ...p, animationStage: undefined }
+                    : p
+                )
+              )
+            }, 800)
+          }
+        }, 300)
+      }
+    }
+    
+    setTimeout(() => {
+      setGrowingPlants(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(plantId)
+        return newSet
+      })
+    }, 4000)
+  }
 
   useEffect(() => {
     drawGarden()
   }, [plants, drawGarden])
+
+  useEffect(() => {
+    let animationFrame: number
+    
+    const animate = () => {
+      if (growingPlants.size > 0 || xpAnimations.size > 0) {
+        drawGarden()
+        animationFrame = requestAnimationFrame(animate)
+      }
+    }
+    
+    if (growingPlants.size > 0 || xpAnimations.size > 0) {
+      animationFrame = requestAnimationFrame(animate)
+    }
+    
+    return () => {
+      if (animationFrame) {
+        cancelAnimationFrame(animationFrame)
+      }
+    }
+  }, [growingPlants, xpAnimations, drawGarden])
   useEffect(() => {
     const preloadSprites = async () => {
       const allPlants = Object.values(CATEGORY_PLANTS).flat()
@@ -645,12 +803,25 @@ export default function CanvasGarden() {
     preloadSprites()
   }, [getPlantSpriteImage])
 
+  useEffect(() => {
+    if (focusedPlantId && mode === 'tasks') {
+      const timer = setTimeout(() => {
+        const taskInput = document.getElementById(`task-input-${focusedPlantId}`)
+        if (taskInput) {
+          taskInput.focus()
+          taskInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 300)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [focusedPlantId, mode])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-800 via-green-700 to-green-600">
       <header className="bg-black/30 backdrop-blur-sm border-b border-white/20">
         <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between header-content">
             <div className="flex items-center space-x-4">
               <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
                 <Leaf className="w-5 h-5 text-white" />
@@ -661,15 +832,14 @@ export default function CanvasGarden() {
               </div>
             </div>
             
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-4 header-buttons">
               <div className="flex items-center space-x-1 bg-white/10 rounded-lg p-1">
                 <button
                   onClick={() => {
                     setMode('plant')
-                    setIsPlanting(false)
                     setHoveredPlant(null)
                   }}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors plant-button ${
                     mode === 'plant' 
                       ? 'bg-green-600 text-white' 
                       : 'text-white hover:bg-white/20'
@@ -681,10 +851,9 @@ export default function CanvasGarden() {
                 <button
                   onClick={() => {
                     setMode('info')
-                    setIsPlanting(false)
                     setMousePos(null)
                   }}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors plant-button ${
                     mode === 'info' 
                       ? 'bg-cyan-600 text-white' 
                       : 'text-white hover:bg-white/20'
@@ -696,11 +865,12 @@ export default function CanvasGarden() {
                 <button
                   onClick={() => {
                     setMode('tasks')
-                    setIsPlanting(false)
                     setMousePos(null)
                     setHoveredPlant(null)
+                    setSelectedPlant(null)
+                    setShowWorkDialog(false)
                   }}
-                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  className={`px-3 py-2 rounded-md text-sm font-medium transition-colors plant-button ${
                     mode === 'tasks' 
                       ? 'bg-purple-600 text-white' 
                       : 'text-white hover:bg-white/20'
@@ -712,57 +882,17 @@ export default function CanvasGarden() {
               </div>
 
 
-              {mode === 'plant' && (
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => setIsPlanting(!isPlanting)}
-                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      isPlanting 
-                        ? 'bg-green-600 text-white' 
-                        : 'bg-white/10 text-white hover:bg-white/20'
-                    }`}
-                  >
-                    {isPlanting ? 'Cancel' : 'Add Task'}
-                  </button>
-                  
-                  <button
-                    onClick={() => setShowHoursInput(!showHoursInput)}
-                    disabled={!selectedPlant}
-                    className="px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:opacity-50 text-white rounded-md font-medium transition-colors"
-                  >
-                    I worked on this today!
-                  </button>
-                  
-                  {selectedPlant && selectedPlant.stage >= 4 && (
-                    <button
-                      onClick={harvestPlant}
-                      className="px-4 py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded-md font-medium transition-colors"
-                    >
-                      Harvest Plant
-                    </button>
-                  )}
-                </div>
-              )}
-
-
-              <div className="flex items-center space-x-2 text-white">
+              <div className="flex items-center space-x-2 text-white header-stats">
                 <div className="bg-white/10 px-3 py-2 rounded flex items-center space-x-1">
                   <Zap className="w-4 h-4 text-yellow-400" />
-                  <span className="text-sm">Level {userProgress?.level || 1}</span>
+                  <span className="text-sm">Level 1</span>
                 </div>
                 <div className="bg-white/10 px-3 py-2 rounded">
-                  <span className="text-sm">{userProgress?.total_experience || 0} XP</span>
+                  <span className="text-sm">0 XP</span>
                 </div>
               </div>
               
               <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setIsPlanting(true)}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center space-x-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Task</span>
-                </button>
                 <button 
                   onClick={logout}
                   className="p-2 text-green-100 hover:text-red-300 transition-colors bg-white/10 rounded"
@@ -778,14 +908,16 @@ export default function CanvasGarden() {
       <div className="relative h-[calc(100vh-100px)] overflow-hidden">
         <div className="relative z-10 h-full">
           <div className="flex h-full p-4 justify-center items-center">
-            <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 flex items-center justify-center" style={{width: `${GRID_WIDTH * CELL_SIZE + 40}px`, height: `${GRID_HEIGHT * CELL_SIZE + 40}px`}}>
+            <div className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 flex items-center justify-center garden-canvas" style={{width: `${GRID_WIDTH * CELL_SIZE + 40}px`, height: `${GRID_HEIGHT * CELL_SIZE + 40}px`}}>
               <canvas
                 ref={canvasRef}
                 width={GRID_WIDTH * CELL_SIZE}
                 height={GRID_HEIGHT * CELL_SIZE}
                 onClick={handleCanvasClick}
+                onTouchStart={handleCanvasClick}
                 onMouseMove={handleCanvasMouseMove}
                 className="border-2 border-green-400/30 rounded-lg cursor-pointer bg-green-900/20"
+                style={{ touchAction: 'manipulation' }}
               />
             </div>
           </div>
@@ -797,10 +929,10 @@ export default function CanvasGarden() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="w-[500px] h-auto bg-gradient-to-br from-green-600 to-green-800 rounded-xl shadow-2xl"
+            className="w-[500px] h-auto bg-gradient-to-br from-green-600 to-green-800 rounded-xl shadow-2xl modal-container"
                 >
                   <div className="flex justify-between items-center p-4 border-b border-white/20">
-                    <h2 className="text-xl font-bold text-white">🌱 Plant Details</h2>
+                    <h2 className="text-xl font-bold text-white">Plant Details</h2>
                     <button
                       onClick={() => setMode('plant')}
                       className="text-white/70 hover:text-white text-2xl font-bold"
@@ -907,9 +1039,9 @@ export default function CanvasGarden() {
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 max-w-md w-full mx-4"
+            className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 max-w-md w-full mx-4 modal-container"
           >
-            <h3 className="text-xl font-bold text-white mb-4 text-center">🌱 Create New Task</h3>
+            <h3 className="text-xl font-bold text-white mb-4 text-center">Create New Task</h3>
             <p className="text-green-100 text-sm text-center mb-6">
               Plant a seed for your new goal and watch it grow as you work!
             </p>
@@ -928,17 +1060,6 @@ export default function CanvasGarden() {
                 />
               </div>
 
-              <div>
-                <label className="block text-white text-sm font-medium mb-2">Description (Optional)</label>
-                <textarea
-                  value={plantForm.description}
-                  onChange={(e) => setPlantForm({...plantForm, description: e.target.value})}
-                  placeholder="Describe your goal, what you want to achieve..."
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
-                  rows={3}
-                  maxLength={500}
-                />
-              </div>
               
               <div>
                 <label className="block text-white text-sm font-medium mb-2">Task Category</label>
@@ -956,10 +1077,11 @@ export default function CanvasGarden() {
                 </select>
                 {plantForm.category && (
                   <p className="text-green-200 text-xs mt-1">
-                    🌿 Your task will grow as a {PRODUCTIVITY_CATEGORIES.find(c => c.value === plantForm.category)?.label.toLowerCase()} plant
+                    Your task will grow as a {PRODUCTIVITY_CATEGORIES.find(c => c.value === plantForm.category)?.label.toLowerCase()} plant
                   </p>
                 )}
               </div>
+
             </div>
             
             <div className="flex gap-3 mt-6">
@@ -978,7 +1100,7 @@ export default function CanvasGarden() {
                     : 'bg-gray-500 text-gray-300 cursor-not-allowed'
                 }`}
               >
-                🌱 Plant Task
+Plant Task
               </button>
             </div>
           </motion.div>
@@ -987,88 +1109,61 @@ export default function CanvasGarden() {
       
       {loading && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20">
+          <div className="card">
             <div className="flex items-center space-x-3">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-400"></div>
-              <span className="text-white">Loading plants...</span>
+              <div className="loading-spinner"></div>
+              <span className="text-white font-medium">Loading your garden...</span>
             </div>
           </div>
         </div>
       )}
       
-      {showHoursInput && selectedPlant && createPortal(
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" style={{ zIndex: 99999 }}>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl p-6 border border-gray-200 w-80 shadow-2xl"
-          >
-            <h3 className="text-lg font-semibold text-gray-800 mb-4 text-center">
-              How many hours did you work?
-            </h3>
-            
-            <div className="space-y-4">
-              <input
-                type="number"
-                step="0.5"
-                min="0.5"
-                max="24"
-                value={hoursWorked}
-                onChange={(e) => setHoursWorked(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-800 text-center text-xl"
-                placeholder="2"
-                autoFocus
-              />
-              <p className="text-sm text-gray-600 text-center">
-                You'll earn {hoursWorked ? Math.round(parseFloat(hoursWorked) * 100) : 0} XP
-              </p>
-              
-              <div className="flex space-x-3">
-                <button
-                  onClick={workOnTask}
-                  disabled={!hoursWorked}
-                  className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
-                >
-                  Done!
-                </button>
-                <button
-                  onClick={() => {
-                    setShowHoursInput(false)
-                    setHoursWorked('')
-                  }}
-                  className="px-4 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>,
-        document.body
-      )}
 
 
-      {mode === 'tasks' && createPortal(
+      {showTaskPanel && createPortal(
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto"
+            className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto modal-container"
           >
             <div className="flex items-center justify-between mb-6">
               <div className="text-center flex-1">
-                <h2 className="text-2xl font-bold text-white mb-2">📝 Your Daily Tasks</h2>
-                <p className="text-green-200">What have you worked on? What are you working on?</p>
+                {shouldAutoShowTasks ? (
+                  <>
+                    <h2 className="text-2xl font-bold text-white mb-2">Good morning!</h2>
+                    <p className="text-green-200">Ready to tend your garden? What will you work on today?</p>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-2xl font-bold text-white mb-2">Your Daily Tasks</h2>
+                    <p className="text-green-200">What have you worked on? What are you working on?</p>
+                  </>
+                )}
               </div>
-              <button
-                onClick={() => setMode('plant')}
-                className="text-white/70 hover:text-white text-2xl font-bold ml-4"
-              >
-                ×
-              </button>
+              <div className="flex items-center space-x-2 ml-4">
+                {shouldAutoShowTasks && (
+                  <button
+                    onClick={skipDailyTasks}
+                    className="px-3 py-1 text-sm text-white/70 hover:text-white/90 hover:bg-white/10 rounded transition-colors"
+                  >
+                    Skip for today
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShouldAutoShowTasks(false)
+                    setShowTaskPanel(false)
+                    setFocusedPlantId(null)
+                    setMode('plant')
+                  }}
+                  className="text-white/70 hover:text-white text-2xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
-            {/* Task Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <div className="bg-white/10 rounded-lg p-4 text-center">
                 <div className="text-2xl font-bold text-white">{plants.filter(p => p.task_status === 'active').length}</div>
@@ -1091,18 +1186,24 @@ export default function CanvasGarden() {
                 <div className="text-xs text-green-200">Best Streak</div>
               </div>
               <div className="bg-white/10 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-white">{userProgress?.level || 1}</div>
+                <div className="text-2xl font-bold text-white">1</div>
                 <div className="text-xs text-green-200">Your Level</div>
               </div>
             </div>
 
-            {/* Tasks List */}
             <div className="space-y-4 max-h-96 overflow-y-auto">
               {plants.map((plant) => (
-                <div key={plant.id} className="bg-white/5 rounded-lg p-4 border border-white/10">
+                <div 
+                  key={plant.id} 
+                  className={`bg-white/5 rounded-lg p-4 border transition-all duration-300 ${
+                    focusedPlantId === plant.id 
+                      ? 'border-green-500 bg-green-500/10 shadow-lg shadow-green-500/20' 
+                      : 'border-white/10'
+                  }`}
+                >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-2">
-                      <span className="text-lg">🌱</span>
+                      <span className="text-lg">Plant</span>
                       <h3 className="text-white font-medium">{plant.name}</h3>
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                         plant.type === 'work' ? 'bg-blue-500/20 text-blue-200' :
@@ -1113,9 +1214,9 @@ export default function CanvasGarden() {
                         {plant.type}
                       </span>
                       <span className="text-sm">
-                        {(plant.current_streak || 0) >= 7 ? '🔥' :
-                         (plant.current_streak || 0) >= 3 ? '⚡' :
-                         (plant.current_streak || 0) >= 1 ? '✨' : '💤'}
+                        {(plant.current_streak || 0) >= 7 ? 'Hot' :
+                         (plant.current_streak || 0) >= 3 ? 'Active' :
+                         (plant.current_streak || 0) >= 1 ? 'Growing' : 'Dormant'}
                       </span>
                     </div>
                     <div className="text-sm text-green-200">
@@ -1130,27 +1231,30 @@ export default function CanvasGarden() {
                   <div className="flex items-center space-x-2 text-sm text-green-200 mb-3">
                     <span>Streak: {plant.current_streak || 0} days</span>
                     <span>•</span>
-                    <span>Stage: {Math.min(5, Math.floor((plant.growth_level || 0) / 20))}/5</span>
+                    <span>Stage: {plant.stage}/5</span>
                   </div>
 
                   {plant.task_status === 'active' && (
                     <div className="flex space-x-2">
                       <input
+                        id={`task-input-${plant.id}`}
                         type="number"
                         step="0.5"
                         min="0"
                         max="24"
                         placeholder="Hours worked today"
-                        className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500"
-                        onKeyPress={(e) => {
+                        className={`flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                          focusedPlantId === plant.id ? 'ring-2 ring-green-500' : ''
+                        }`}
+                        onKeyPress={async (e) => {
                           if (e.key === 'Enter') {
                             const hours = parseFloat((e.target as HTMLInputElement).value)
                             if (hours > 0) {
-                              logWork(plant.id, hours);
+                              await logWork(plant.id, hours);
                               (e.target as HTMLInputElement).value = ''
                               
-                              // Show success message
-                              setSubmissionMessage("Great work! Your task is growing! 🌱")
+                              setFocusedPlantId(null)
+                              setSubmissionMessage("Great work! Your task is growing!")
                               setShowSuccessMessage(true)
                               setTimeout(() => {
                                 setShowSuccessMessage(false)
@@ -1162,16 +1266,22 @@ export default function CanvasGarden() {
                       />
                       <button
                         onClick={() => completeTask(plant.id)}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded text-sm font-medium transition-colors"
+                        disabled={plant.stage < 4}
+                        className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                          plant.stage >= 4 
+                            ? 'bg-green-600 hover:bg-green-700 text-white' 
+                            : 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                        }`}
+                        title={plant.stage < 4 ? `Plant needs to reach stage 4 to complete (currently stage ${plant.stage})` : 'Mark task as complete'}
                       >
-                        Complete
+                        {plant.stage >= 4 ? 'Complete' : `Complete (Stage ${plant.stage}/4)`}
                       </button>
                     </div>
                   )}
 
                   {plant.task_status === 'completed' && (
                     <div className="text-center py-2">
-                      <span className="text-green-400 font-medium">✅ Task Completed!</span>
+                      <span className="text-green-400 font-medium">Task Completed!</span>
                       <p className="text-xs text-green-200 mt-1">Will be harvested automatically</p>
                     </div>
                   )}
@@ -1184,11 +1294,24 @@ export default function CanvasGarden() {
                   <button
                     onClick={() => {
                       setMode('plant')
-                      setIsPlanting(true)
                     }}
                     className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
                   >
                     Create Your First Task
+                  </button>
+                </div>
+              )}
+              
+              {plants.length > 0 && (
+                <div className="text-center pt-4 border-t border-white/10">
+                  <button
+                    onClick={() => {
+                      setMode('plant')
+                    }}
+                    className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2 mx-auto"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add New Task</span>
                   </button>
                 </div>
               )}
@@ -1198,7 +1321,6 @@ export default function CanvasGarden() {
         document.body
       )}
 
-      {/* Success Message */}
       {showSuccessMessage && createPortal(
         <div className="fixed top-4 right-4 z-50">
           <motion.div
@@ -1207,8 +1329,82 @@ export default function CanvasGarden() {
             exit={{ opacity: 0, x: 300 }}
             className="bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center space-x-2"
           >
-            <span className="text-2xl">🎉</span>
+            <span className="text-2xl">Success!</span>
             <span className="font-medium">{submissionMessage}</span>
+          </motion.div>
+        </div>,
+        document.body
+      )}
+
+      {showWorkDialog && selectedPlant && mode === 'tasks' && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white/10 backdrop-blur-md rounded-xl p-6 border border-white/20 max-w-sm w-full mx-4"
+          >
+            <h3 className="text-xl font-bold text-white mb-4 text-center">
+              {selectedPlant.name}
+            </h3>
+            <p className="text-green-100 text-sm text-center mb-6">
+              How many hours did you work on this?
+            </p>
+            
+            <input
+              type="number"
+              step="0.5"
+              min="0"
+              max="24"
+              value={workHours}
+              onChange={(e) => setWorkHours(e.target.value)}
+              placeholder="2"
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 text-center text-xl mb-4"
+              autoFocus
+              onKeyPress={async (e) => {
+                if (e.key === 'Enter' && workHours && parseFloat(workHours) > 0) {
+                  await logWork(selectedPlant.id, parseFloat(workHours))
+                  setWorkHours('')
+                  setShowWorkDialog(false)
+                  setSubmissionMessage("Great work! Your plant is growing!")
+                  setShowSuccessMessage(true)
+                  setTimeout(() => {
+                    setShowSuccessMessage(false)
+                    setSubmissionMessage('')
+                  }, 3000)
+                }
+              }}
+            />
+            
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  if (workHours && parseFloat(workHours) > 0) {
+                    await logWork(selectedPlant.id, parseFloat(workHours))
+                    setWorkHours('')
+                    setShowWorkDialog(false)
+                    setSubmissionMessage("Great work! Your plant is growing!")
+                    setShowSuccessMessage(true)
+                    setTimeout(() => {
+                      setShowSuccessMessage(false)
+                      setSubmissionMessage('')
+                    }, 3000)
+                  }
+                }}
+                disabled={!workHours || parseFloat(workHours) <= 0}
+                className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+              >
+                Log Work
+              </button>
+              <button
+                onClick={() => {
+                  setWorkHours('')
+                  setShowWorkDialog(false)
+                }}
+                className="px-4 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
           </motion.div>
         </div>,
         document.body

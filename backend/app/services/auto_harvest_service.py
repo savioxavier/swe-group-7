@@ -55,6 +55,14 @@ class AutoHarvestService:
             if plant.task_status == "completed":
                 raise HTTPException(status_code=400, detail="Task is already completed")
             
+            # Check if plant has reached stage 4+ (80+ growth_level) before allowing completion
+            plant_stage = min(5, plant.growth_level // 20)
+            if plant_stage < 4:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Plant needs to reach stage 4 to complete (currently stage {plant_stage})"
+                )
+            
             # Mark as completed
             completion_date = datetime.now()
             result = client.table("plants").update({
