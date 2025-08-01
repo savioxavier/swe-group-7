@@ -21,8 +21,6 @@ export const useXPAnimations = () => {
     maxXP: number = 2000, // Default max XP per level
     showInHeader: boolean = false
   ) => {
-    console.log(`Triggering XP animation for plant ${plantId}: +${xpGained} XP`)
-
     // Clear any existing timeout for this plant
     const existingTimeout = animationTimeouts.current.get(plantId)
     if (existingTimeout) {

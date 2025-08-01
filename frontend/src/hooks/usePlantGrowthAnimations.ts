@@ -16,15 +16,10 @@ export const usePlantGrowthAnimations = () => {
     newStage: number, 
     position: { x: number, y: number }
   ) => {
-    console.log(`[GROWTH ANIMATION] Triggered for plant ${plantId}: oldStage=${oldStage}, newStage=${newStage}, position=`, position)
-    
     // Only animate if stage actually increased
     if (newStage <= oldStage) {
-      console.log(`[GROWTH ANIMATION] Skipping animation - no stage increase (${newStage} <= ${oldStage})`)
       return
     }
-
-    console.log(`[GROWTH ANIMATION] Plant ${plantId} grew from stage ${oldStage} to ${newStage}`)
 
     // Clear any existing timeout for this plant
     const existingTimeout = animationTimeouts.current.get(plantId)

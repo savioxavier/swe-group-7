@@ -7,7 +7,7 @@ interface AuthContextType {
   token: string | null
   login: (data: LoginData) => Promise<void>
   register: (data: RegisterData) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
   loading: boolean
 }
 
@@ -88,12 +88,21 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const logout = () => {
-    setToken(null)
-    setUser(null)
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    localStorage.removeItem('tokenExpiry')
+  const logout = async () => {
+    try {
+      // Call the backend logout endpoint to trigger auto-harvest
+      await api.logout()
+    } catch (error) {
+      console.error('Error during logout:', error)
+      // Continue with local logout even if backend call fails
+    } finally {
+      // Always clear local storage
+      setToken(null)
+      setUser(null)
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      localStorage.removeItem('tokenExpiry')
+    }
   }
 
   const value: AuthContextType = {

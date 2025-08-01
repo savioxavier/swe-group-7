@@ -10,6 +10,9 @@ class PlantService:
     async def create_plant(user_id: str, plant_data: PlantCreate, auth_supabase=None) -> PlantResponse:
         client = auth_supabase or supabase
         try:
+            # First, clear any inactive plants at this position to avoid conflicts
+            client.table("plants").delete().eq("user_id", user_id).eq("position_x", plant_data.position_x).eq("position_y", plant_data.position_y).eq("is_active", False).execute()
+            
             # Handle both old plant_type and new productivity_category
             insert_data = {
                 "user_id": user_id,

@@ -78,6 +78,15 @@ async def login(user: UserLogin):
         if auth_response.session is None:
             raise HTTPException(status_code=401, detail="Authentication failed")
         
+        user_id = auth_response.user.id
+        
+        # Trigger auto-harvest check on login (respects 6-hour timer, doesn't force)
+        try:
+            await AutoHarvestService.check_and_harvest_completed_tasks(user_id, force_harvest=False)
+        except Exception as e:
+            # Don't fail login if auto-harvest fails, just log it
+            print(f"Auto-harvest failed during login for user {user_id}: {str(e)}")
+        
         user_data = UserResponse(
             id=auth_response.user.id,
             email=auth_response.user.email,
@@ -175,8 +184,8 @@ async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         auth_supabase, user_id = await get_authenticated_supabase(credentials)
         
-        # Trigger auto-harvest for this user's trophy plants
-        await AutoHarvestService.check_and_harvest_completed_tasks(user_id, auth_supabase)
+        # Trigger auto-harvest for this user's trophy plants with force=True for immediate harvest
+        await AutoHarvestService.check_and_harvest_completed_tasks(user_id, auth_supabase, force_harvest=True)
         
         # Sign out the user
         auth_supabase.auth.sign_out()

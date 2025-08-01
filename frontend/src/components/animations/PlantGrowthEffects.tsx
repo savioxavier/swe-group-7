@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Star } from 'lucide-react'
+import { Star } from 'lucide-react'
 
 interface Particle {
   id: string
@@ -42,7 +42,7 @@ export const PlantGrowthEffects: React.FC<PlantGrowthEffectsProps> = ({
       for (let i = 0; i < particleCount; i++) {
         // Distribute particles in a circle around the plant
         const angle = (i / particleCount) * Math.PI * 2
-        const radius = cellSize * 0.6 + Math.random() * cellSize * 0.4
+        const radius = cellSize * 0.8 + Math.random() * cellSize * 0.6
         const x = Math.cos(angle) * radius
         const y = Math.sin(angle) * radius
 
@@ -51,9 +51,9 @@ export const PlantGrowthEffects: React.FC<PlantGrowthEffectsProps> = ({
           x,
           y,
           color: getParticleColor(stage),
-          size: 4 + Math.random() * 6,
-          duration: 1.5 + Math.random() * 1,
-          delay: Math.random() * 0.5
+          size: 8 + Math.random() * 12, // Bigger particles
+          duration: 2 + Math.random() * 1.5, // Longer duration
+          delay: Math.random() * 0.8
         })
       }
 
@@ -67,7 +67,7 @@ export const PlantGrowthEffects: React.FC<PlantGrowthEffectsProps> = ({
         onAnimationComplete()
       }, 2500)
     }
-  }, [isGrowing, plantId, newStage, cellSize, onAnimationComplete])
+  }, [isGrowing, plantId, newStage, position, cellSize, onAnimationComplete])
 
   const getParticleColor = (stage: number): string => {
     const colors = [
@@ -113,6 +113,51 @@ export const PlantGrowthEffects: React.FC<PlantGrowthEffectsProps> = ({
         transform: 'translate(-50%, -50%)'
       }}
     >
+      {/* Pulsing Ring Effect */}
+      <motion.div
+        className="absolute inset-0 rounded-full border-4"
+        style={{
+          borderColor: getParticleColor(Math.floor(Number(newStage))),
+          width: cellSize * 1.5,
+          height: cellSize * 1.5,
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)'
+        }}
+        initial={{ scale: 0, opacity: 0.8 }}
+        animate={{ 
+          scale: [0, 1.2, 1.8],
+          opacity: [0.8, 0.4, 0]
+        }}
+        transition={{ 
+          duration: 1.5,
+          ease: "easeOut"
+        }}
+      />
+      
+      {/* Central Burst Effect */}
+      <motion.div
+        className="absolute rounded-full"
+        style={{
+          backgroundColor: getParticleColor(Math.floor(Number(newStage))),
+          width: cellSize * 0.8,
+          height: cellSize * 0.8,
+          left: '50%',
+          top: '50%',
+          transform: 'translate(-50%, -50%)',
+          boxShadow: `0 0 20px ${getParticleColor(Math.floor(Number(newStage)))}`
+        }}
+        initial={{ scale: 0, opacity: 1 }}
+        animate={{ 
+          scale: [0, 1.5, 0],
+          opacity: [1, 0.6, 0]
+        }}
+        transition={{ 
+          duration: 1.2,
+          ease: "easeOut"
+        }}
+      />
+
       {/* Stage Level Up Text */}
       <AnimatePresence>
         {showStageText && (

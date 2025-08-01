@@ -5,7 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Home from './pages/Home'
 import SignIn from './pages/SignIn'
 import SignUp from './pages/SignUp'
-import CanvasGarden from './pages/CanvasGarden'
+import CanvasGarden from './components/garden/CanvasGarden'
 import './App.css'
 
 function AuthRedirect() {

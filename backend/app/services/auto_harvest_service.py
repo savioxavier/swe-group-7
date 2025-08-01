@@ -8,9 +8,10 @@ from fastapi import HTTPException
 class AutoHarvestService:
     
     @staticmethod
-    async def check_and_harvest_completed_tasks(user_id: str = None, auth_supabase=None):
-        """Check for completed tasks that should be auto-harvested after 6 hours"""
+    async def check_and_harvest_completed_tasks(user_id: str = None, auth_supabase=None, force_harvest: bool = False):
+        """Check for completed tasks that should be auto-harvested after 6 hours or immediately if forced"""
         client = auth_supabase or supabase
+        
         try:
             # Get all completed plants
             query = client.table("plants").select("*").eq("task_status", "completed").eq("is_active", True)
@@ -24,22 +25,25 @@ class AutoHarvestService:
                 if not completion_date:
                     continue
                 
-                # Parse completion date
-                if isinstance(completion_date, str):
-                    completion_dt = datetime.fromisoformat(completion_date.replace('Z', '+00:00'))
-                else:
-                    completion_dt = completion_date
+                should_harvest = force_harvest
                 
-                # Check if it's been 6 hours since completion
-                hours_since_completion = (datetime.now() - completion_dt).total_seconds() / 3600
-                if hours_since_completion >= 6:
+                if not should_harvest:
+                    # Parse completion date
+                    if isinstance(completion_date, str):
+                        completion_dt = datetime.fromisoformat(completion_date.replace('Z', '+00:00'))
+                    else:
+                        completion_dt = completion_date
+                    
+                    # Check if it's been 6 hours since completion
+                    hours_since_completion = (datetime.now() - completion_dt).total_seconds() / 3600
+                    should_harvest = hours_since_completion >= 6
+                
+                if should_harvest:
                     # Auto-harvest this plant
                     client.table("plants").update({
                         "task_status": "harvested",
                         "is_active": False  # Remove from garden
                     }).eq("id", plant_dict["id"]).execute()
-                    
-                    print(f"Auto-harvested completed task: {plant_dict.get('task_name', plant_dict.get('name'))}")
                     
         except Exception as e:
             print(f"Error in auto-harvest check: {str(e)}")

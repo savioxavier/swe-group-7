@@ -45,7 +45,7 @@ export const XPGainEffects: React.FC<XPGainEffectsProps> = ({
         onAnimationComplete()
       }, 2000)
     }
-  }, [isAnimating, onAnimationComplete])
+  }, [isAnimating, onAnimationComplete, xpGained, plantId])
 
   if (!isAnimating) return null
 

@@ -65,6 +65,13 @@ export const api = {
     })
   },
 
+  async logout(): Promise<{ message: string }> {
+    return apiRequest<{ message: string }>('/api/users/logout', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    })
+  },
+
   async getCurrentUser(token: string): Promise<AuthResponse['user']> {
     return apiRequest<AuthResponse['user']>('/api/users/me', {
       headers: {
