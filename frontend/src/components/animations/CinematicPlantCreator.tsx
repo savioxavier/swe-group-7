@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Leaf, Sparkles, X, Briefcase, BookOpen, Dumbbell, Palette } from 'lucide-react'
+import { useSounds } from '../../lib/sounds'
 
 interface CinematicPlantCreatorProps {
   isOpen: boolean
@@ -33,6 +34,8 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
   })
   const [currentStep, setCurrentStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const sounds = useSounds()
+  const hasPlayedOpenSound = useRef(false)
 
   const formSteps = [
     { field: 'category', title: 'Choose Your Plant Type', type: 'category' },
@@ -41,16 +44,24 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
   ]
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !hasPlayedOpenSound.current) {
       setCurrentStep(0)
       setFormData({ name: '', description: '', category: '' })
       setIsSubmitting(false)
+      // Play modal open sound only once
+      sounds.play('ui_modal_open')
+      hasPlayedOpenSound.current = true
+    } else if (!isOpen) {
+      // Reset the flag when modal closes
+      hasPlayedOpenSound.current = false
     }
-  }, [isOpen])
+  }, [isOpen, sounds])
 
   const handleNext = () => {
+    sounds.play('ui_button')
     if (currentStep < formSteps.length - 1) {
       setCurrentStep(currentStep + 1)
+      sounds.play('ui_tab_switch')
     } else {
       handleSubmit()
     }
@@ -58,8 +69,14 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
 
   const handleSubmit = async () => {
     setIsSubmitting(true)
+    sounds.play('ui_success')
     await new Promise(resolve => setTimeout(resolve, 800))
     onCreatePlant(formData)
+    onClose()
+  }
+
+  const handleClose = () => {
+    sounds.play('ui_modal_close')
     onClose()
   }
 
@@ -97,7 +114,7 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
               {/* Header */}
               <div className="relative p-6 text-center border-b border-green-400/20">
                 <button
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="absolute top-4 right-4 text-green-200 hover:text-white transition-colors"
                 >
                   <X size={20} />
@@ -156,7 +173,10 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
                             key={category.value}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            onClick={() => setFormData({ ...formData, category: category.value })}
+                            onClick={() => {
+                              sounds.play('ui_click')
+                              setFormData({ ...formData, category: category.value })
+                            }}
                             className={`p-4 rounded-xl border-2 transition-all ${
                               formData.category === category.value
                                 ? 'border-yellow-300 bg-yellow-300/20 text-white'

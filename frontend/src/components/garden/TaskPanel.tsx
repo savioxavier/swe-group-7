@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { Plus } from 'lucide-react'
 import type { Plant } from './constants'
+import { useSounds } from '../../lib/sounds'
 
 interface TaskPanelProps {
   plants: Plant[]
@@ -29,6 +30,8 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   focusedPlantId,
   onSetFocusedPlant
 }) => {
+  const sounds = useSounds()
+  
   if (!isOpen) return null
 
   const handleWorkSubmit = async (plantId: string, hours: number) => {
@@ -160,7 +163,10 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
                     }}
                   />
                   <button
-                    onClick={() => onCompleteTask(plant.id)}
+                    onClick={() => {
+                      sounds.playUI('button')
+                      onCompleteTask(plant.id)
+                    }}
                     disabled={plant.stage < 4}
                     className={`px-4 py-3 rounded text-sm font-medium transition-colors min-h-[44px] ${
                       plant.stage >= 4 
@@ -187,7 +193,10 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
               <div className="text-center py-8">
                 <p className="text-white/70 mb-4">No tasks yet!</p>
                 <button
-                  onClick={onCreateNew}
+                  onClick={() => {
+                    sounds.playUI('button')
+                    onCreateNew()
+                  }}
                   className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
                 >
                   Create Your First Task
@@ -202,7 +211,10 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
           <div className="flex items-center justify-between">
             {plants.length > 0 && (
               <button
-                onClick={onCreateNew}
+                onClick={() => {
+                  sounds.playUI('button')
+                  onCreateNew()
+                }}
                 className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
               >
                 <Plus className="w-4 h-4" />
@@ -211,7 +223,10 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
             )}
             
             <button
-              onClick={onClose}
+              onClick={() => {
+                sounds.playUI('button')
+                onClose()
+              }}
               className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-medium transition-colors ml-auto"
             >
               Close Tasks

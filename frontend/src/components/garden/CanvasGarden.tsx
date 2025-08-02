@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../../contexts/AuthContext'
 import { api } from '../../lib/api'
+import { useSounds } from '../../lib/sounds'
 import type { PlantCreate, UserProgressResponse } from '../../types'
 import { CinematicPlotFocus } from '../animations/CinematicPlotFocus'
 import { CinematicPlantCreator } from '../animations/CinematicPlantCreator'
@@ -36,6 +37,9 @@ export default function CanvasGarden() {
   // Performance monitoring
   const { trackOperation } = usePerformanceMonitoring()
   
+  // Sound effects
+  const sounds = useSounds()
+  
   // Plant and UI state
   const [plants, setPlants] = useState<Plant[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,6 +59,7 @@ export default function CanvasGarden() {
   // Task panel states
   const [shouldAutoShowTasks, setShouldAutoShowTasks] = useState(false)
   const [focusedPlantId, setFocusedPlantId] = useState<string | null>(null)
+  const [taskPanelClosedThisSession, setTaskPanelClosedThisSession] = useState(false)
   
   // Success message states
   const [submissionMessage, setSubmissionMessage] = useState('')
@@ -162,6 +167,9 @@ export default function CanvasGarden() {
 
       if (mode === 'plant') {
         if (clickedPlant) {
+          // Play plant click sound
+          sounds.playPlant('click')
+          
           setSelectedPlant(clickedPlant)
           
           setPlants(prevPlants => 
@@ -191,11 +199,16 @@ export default function CanvasGarden() {
         } else {
           setSelectedPlant(null)
           if (isPositionPlantable(gridX, gridY)) {
+            // Play UI click for starting plant creation
+            sounds.playUI('click')
             startCinematicPlanting({ x: gridX, y: gridY })
           }
         }
       } else if (mode === 'info') {
         if (clickedPlant) {
+          // Play plant click sound
+          sounds.playPlant('click')
+          
           setSelectedPlant(clickedPlant)
           
           setPlants(prevPlants => 
@@ -227,6 +240,9 @@ export default function CanvasGarden() {
           setSelectedPlant(null)
         }
       } else if (mode === 'tasks' && clickedPlant) {
+        // Play plant focus sound
+        sounds.playPlant('click')
+        
         setSelectedPlant(clickedPlant)
         setFocusedPlantId(clickedPlant.id)
         
@@ -261,6 +277,9 @@ export default function CanvasGarden() {
   }
 
   const handleModeChange = (newMode: 'plant' | 'info' | 'tasks') => {
+    // Play UI sound for mode switching
+    sounds.playUI('button')
+    
     setMode(newMode)
     
     if (newMode === 'plant') {
@@ -275,9 +294,8 @@ export default function CanvasGarden() {
       setSelectedPlant(null)
       setShowWorkDialog(false)
       
-      if (!focusedPlantId) {
-        showSuccessMsg('Tasks mode activated - click any plant to focus on it!')
-      }
+      // Play modal opening sound
+      sounds.playUI('modal_open')
     }
   }
 
@@ -360,6 +378,9 @@ export default function CanvasGarden() {
       // IMMEDIATE FEEDBACK: Show visual changes right away
       const xpGained = hours * 100
       
+      // Play water/work sound immediately
+      sounds.playPlant('water')
+      
       // 1. Update plant optimistically with glow effect
       setPlants(prevPlants => 
         prevPlants.map(plant => {
@@ -377,8 +398,9 @@ export default function CanvasGarden() {
         })
       )
       
-      // 2. Trigger XP animation immediately
+      // 2. Trigger XP animation immediately with sound
       triggerXPAnimation(plantId, xpGained)
+      sounds.playXPGainSequence(xpGained)
       
       // 3. Show success message immediately
       setSubmissionMessage(`Great work! +${xpGained} XP gained!`)
@@ -416,6 +438,9 @@ export default function CanvasGarden() {
           if (plantAfter) {
             triggerGrowthAnimation(plantId, stageBefore, stageAfter, { x: plantAfter.x, y: plantAfter.y })
             
+            // Play growth sound sequence based on stage
+            sounds.playGrowthSequence(stageAfter)
+            
             // Trigger canvas glow after a delay
             setTimeout(() => {
               startPlantGlow(plantId)
@@ -442,6 +467,9 @@ export default function CanvasGarden() {
 
   const completeTask = async (plantId: string) => {
     try {
+      // Play task completion sound immediately
+      sounds.playAchievement('task_complete')
+      
       // Optimistic update - mark as completed immediately
       setPlants(prevPlants => 
         prevPlants.map(plant => 
@@ -463,9 +491,10 @@ export default function CanvasGarden() {
         )
       )
       
-      // Show success message
+      // Show success message with additional sound
       setSubmissionMessage('Task completed! It will be auto-harvested in 6 hours.')
       setShowSuccessMessage(true)
+      sounds.playUI('success')
       
     } catch (error) {
       console.error('Failed to complete task:', error)
@@ -504,6 +533,9 @@ export default function CanvasGarden() {
         const apiPlant = await api.createPlant(apiPlantData)
         const newPlant = convertApiPlantToLocal(apiPlant)
         setPlants([...plants, newPlant])
+        
+        // Play plant creation sound
+        sounds.playPlant('create')
         
         setShowPlantCreator(false)
         startReturnAnimation()
@@ -554,6 +586,9 @@ export default function CanvasGarden() {
   const shouldShowDailyTasks = useCallback(() => {
     if (!user) return false
     
+    // Don't show if user manually closed it this session
+    if (taskPanelClosedThisSession) return false
+    
     const today = new Date().toDateString()
     
     // Check if panel was already shown today
@@ -565,7 +600,7 @@ export default function CanvasGarden() {
     
     // Simply show once per day on login - no time-based conditions
     return true
-  }, [user, plants])
+  }, [user, plants, taskPanelClosedThisSession])
 
 
   // Effects
@@ -573,6 +608,22 @@ export default function CanvasGarden() {
     loadPlants()
     loadUserProgress()
   }, [loadPlants, loadUserProgress])
+
+  // Background music initialization
+  useEffect(() => {
+    const bgMusicSetting = localStorage.getItem('taskgarden_background_music')
+    const backgroundMusicEnabled = bgMusicSetting === null ? true : bgMusicSetting === 'true' // Default to true
+    const soundEnabled = localStorage.getItem('taskgarden_sound_enabled') !== 'false'
+    
+    if (backgroundMusicEnabled && soundEnabled) {
+      // Small delay to ensure audio context is ready after user interaction
+      const timer = setTimeout(() => {
+        sounds.startBackgroundMusic()
+      }, 2000)
+      
+      return () => clearTimeout(timer)
+    }
+  }, [sounds])
 
   useEffect(() => {
     if (mode !== 'tasks') {
@@ -760,10 +811,16 @@ export default function CanvasGarden() {
         isOpen={showTaskPanel}
         shouldAutoShow={shouldAutoShowTasks}
         onClose={() => {
+          // Play modal close sound
+          sounds.playUI('modal_close')
+          
           setShouldAutoShowTasks(false)
           setShowTaskPanel(false)
           setFocusedPlantId(null)
           setMode('plant')
+          
+          // Mark that user manually closed the panel this session
+          setTaskPanelClosedThisSession(true)
         }}
         onLogWork={logWork}
         onCompleteTask={completeTask}

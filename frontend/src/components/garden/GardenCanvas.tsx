@@ -33,7 +33,7 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
   onLoadSprite
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const animationFrameRef = useRef<number>()
+  const animationFrameRef = useRef<number | undefined>(undefined)
   
   const [dimensions, setDimensions] = useState<Dimensions>({
     containerWidth: GRID_WIDTH * CELL_SIZE + 40,

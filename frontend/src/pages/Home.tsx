@@ -1,7 +1,5 @@
-import React from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Leaf } from 'lucide-react'
 
 export default function Home() {
   return (
@@ -9,9 +7,6 @@ export default function Home() {
       <header className="bg-black/20 backdrop-blur-sm border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
-              <Leaf className="w-6 h-6 text-white" />
-            </div>
             <span className="text-xl font-bold text-white">Task Garden</span>
           </div>
           
@@ -43,9 +38,13 @@ export default function Home() {
             initial={{ scale: 0, rotate: -180 }}
             animate={{ scale: 1, rotate: 0 }}
             transition={{ duration: 0.8, type: "spring", bounce: 0.5 }}
-            className="inline-flex items-center justify-center w-32 h-32 bg-gradient-to-br from-green-400 to-emerald-600 rounded-3xl mb-8 pulse-glow"
+            className="inline-flex items-center justify-center w-32 h-32 rounded-3xl mb-8 pulse-glow overflow-hidden bg-white/10 backdrop-blur-sm"
           >
-            <Leaf className="w-16 h-16 text-white" />
+            <img 
+              src="/assets/logo.png" 
+              alt="TaskGarden Logo" 
+              className="w-full h-full object-cover rounded-2xl"
+            />
           </motion.div>
           
           <motion.h1 

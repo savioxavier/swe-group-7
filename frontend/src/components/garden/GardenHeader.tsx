@@ -1,7 +1,8 @@
 import React, { useState } from 'react'
-import { Plus, Leaf, LogOut, Zap, Info, BarChart3, Trophy, Loader2, Menu } from 'lucide-react'
+import { Plus, LogOut, Zap, Info, BarChart3, Trophy, Loader2, Menu } from 'lucide-react'
 import type { UserProgressResponse } from '../../types'
 import { MobileMenu } from './MobileMenu'
+import { SoundToggle } from '../SoundSettings'
 
 interface GardenHeaderProps {
   user: { username?: string; email?: string } | null
@@ -43,8 +44,12 @@ export const GardenHeader: React.FC<GardenHeaderProps> = ({
             
             {/* Left Section - Logo & User Info */}
             <div className="flex items-center space-x-3 min-w-0 flex-1">
-              <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-                <Leaf className="w-5 h-5 text-white" />
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden bg-white/10 backdrop-blur-sm">
+                <img 
+                  src="/assets/logo.png" 
+                  alt="TaskGarden Logo" 
+                  className="w-full h-full object-cover rounded-md"
+                />
               </div>
               <div className="min-w-0">
                 <h1 className="text-lg sm:text-xl font-bold text-white truncate">Canvas Garden</h1>
@@ -113,6 +118,9 @@ export const GardenHeader: React.FC<GardenHeaderProps> = ({
 
             {/* Right Section - Mobile/Desktop Actions */}
             <div className="flex items-center space-x-2 flex-shrink-0">
+              
+              {/* Sound Toggle - Always Visible */}
+              <SoundToggle />
               
               {/* Mobile Menu Button - Only on Mobile/Tablet */}
               <button
