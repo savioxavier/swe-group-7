@@ -83,7 +83,7 @@ export function LeaderboardTable({ entries }: LeaderboardTableProps) {
             <h3 className="text-2xl font-bold text-left text-white">
               Garden Champions
             </h3>
-            <p className="text-green-200/80">
+            <p className="text-green-200/80 text-left">
               Top performers in your garden community
             </p>
           </div>

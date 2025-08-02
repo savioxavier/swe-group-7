@@ -3,6 +3,7 @@ from fastapi import HTTPException
 from pydantic import UUID4, EmailStr
 
 from ..models.friend import (
+    FriendshipRequest,
     FriendshipStatus,
     UserProfile,
     UserProfileUpdate,
@@ -103,59 +104,123 @@ class FriendService:
 
         return Friendship(**result.data[0])
 
-    # In FriendService
-
     @staticmethod
     async def get_friend_requests(
         user_id: UUID4, outgoing: bool = False
-    ) -> List[Friendship]:
-        rpc_function = (
-            "get_outgoing_friend_requests"
-            if outgoing
-            else "get_incoming_friend_requests"
-        )
+    ) -> List[FriendshipRequest]:
+        user_id_str = str(user_id)
 
-        result = supabase.rpc(rpc_function, {"p_user_id": str(user_id)}).execute()
+        if outgoing:
+            # --- OUTGOING REQUESTS ---
+            # We need the profiles of BOTH users in the friendship to determine who the recipient is.
+            # Select all friendship data, and nest the full profiles for user_one and user_two.
+            query = (
+                supabase.from_("friendships")
+                .select(
+                    "*, user_one:user_profiles!user_one_id(email, display_name), user_two:user_profiles!user_two_id(email, display_name)"
+                )
+                .eq("status", "pending")
+                .eq("action_user_id", user_id_str)
+            )
 
-        return [Friendship(**item) for item in result.data]
+            result = query.execute()
+
+            # Post-process to create the desired `profile` field for the recipient
+            processed_data = []
+            for item in result.data:
+                # The recipient is the user who is NOT the action_user_id (me)
+                if item["user_one"]["email"] and item["user_one_id"] != user_id_str:
+                    item["profile"] = item["user_one"]
+                else:
+                    item["profile"] = item["user_two"]
+
+                del item["user_one"]  # Clean up extra fields
+                del item["user_two"]
+                processed_data.append(item)
+
+            print(f"Processed data: {processed_data}")
+
+            return [FriendshipRequest(**item) for item in processed_data]
+
+        else:
+            # --- INCOMING REQUESTS ---
+            # This is simpler. The sender is the 'action_user_id'.
+            # We can directly join their profile and alias it as 'profile'.
+            query = (
+                supabase.from_("friendships")
+                .select("*, profile:user_profiles!action_user_id(email, display_name)")
+                .eq("status", "pending")
+                .neq("action_user_id", user_id_str)
+                .or_(f"user_one_id.eq.{user_id_str},user_two_id.eq.{user_id_str}")
+            )
+
+            result = query.execute()
+            return [FriendshipRequest(**item) for item in result.data]
 
     @staticmethod
-    async def update_friend_request(
+    async def update_friendship_status(
         user_one_id: UUID4,
         user_two_id: UUID4,
-        current_user_id: UUID4,
+        current_user_id: UUID4,  # The user performing the action
         new_status: FriendshipStatus,
     ) -> Friendship:
-        # Combine the check and update into a single atomic operation.
-        # We will try to update a row that matches ALL the required conditions.
+        """
+        Accepts a friend request by updating its status.
+        The user performing this action must be the recipient, not the original sender.
+        """
         result = (
-            supabase.table("friendships")
+            supabase.from_("friendships")
             .update(
                 {
                     "status": new_status.value,
-                    # The user acting on the request is the new action_user_id
                     "action_user_id": str(current_user_id),
                 }
             )
-            # Condition 1: Find the specific friendship row
-            .eq("user_one_id", str(user_one_id))
-            .eq("user_two_id", str(user_two_id))
-            # Condition 2: Ensure it's still pending
-            .eq("status", FriendshipStatus.PENDING.value)
-            # Condition 3: Ensure the current user is NOT the one who sent it.
-            # This prevents the sender from accepting their own request.
-            .not_.eq("action_user_id", str(current_user_id))
+            .match(
+                {
+                    "user_one_id": str(user_one_id),
+                    "user_two_id": str(user_two_id),
+                    "status": FriendshipStatus.PENDING.value,
+                }
+            )
+            .neq("action_user_id", str(current_user_id))
             .execute()
         )
 
-        # If the update succeeded, result.data will contain the updated friendship.
-        # If no row matched all the .eq() conditions, result.data will be empty.
         if not result.data:
-            # We can give a more generic error now since it could fail for multiple reasons
-            # (not found, already actioned, or user is the sender).
             raise HTTPException(
-                status_code=404,  # Or 403, depending on desired feedback
-                detail="Friend request not found or user is not authorized to update it.",
+                status_code=404,
+                detail="Pending friend request not found or you are not authorized to accept it.",
+            )
+
+        return Friendship(**result.data[0])
+
+    @staticmethod
+    async def delete_friendship(
+        user_one_id: UUID4, user_two_id: UUID4, current_user_id: UUID4
+    ) -> Friendship:
+        """
+        Declines/cancels a friend request by deleting the row.
+        The user performing this action must be the recipient.
+        """
+        result = (
+            supabase.from_("friendships")
+            .delete()
+            .match(
+                {
+                    "user_one_id": str(user_one_id),
+                    "user_two_id": str(user_two_id),
+                    "status": FriendshipStatus.PENDING.value,
+                }
+            )
+            .neq("action_user_id", str(current_user_id))
+            .execute()
+        )
+
+        if not result.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Pending friend request not found or you are not authorized to decline it.",
             )
 
         return Friendship(**result.data[0])

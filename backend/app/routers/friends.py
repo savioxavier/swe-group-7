@@ -10,6 +10,7 @@ from ..models.friend import (
     Friendship,
     FriendRequest,
     LeaderboardEntry,
+    FriendshipRequest,
 )
 from ..services.friend_service import FriendService
 from ..services.auth import get_current_user_id
@@ -28,7 +29,7 @@ async def send_friend_request(
     return await FriendService.send_friend_request(user_id, request.email)
 
 
-@router.get("/requests/incoming", response_model=List[Friendship])
+@router.get("/requests/incoming", response_model=List[FriendshipRequest])
 async def get_incoming_requests(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
@@ -36,7 +37,7 @@ async def get_incoming_requests(
     return await FriendService.get_friend_requests(user_id, outgoing=False)
 
 
-@router.get("/requests/outgoing", response_model=List[Friendship])
+@router.get("/requests/outgoing", response_model=List[FriendshipRequest])
 async def get_outgoing_requests(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
@@ -46,18 +47,14 @@ async def get_outgoing_requests(
 
 @router.put("/request/{other_user_id}/accept", response_model=Friendship)
 async def accept_friend_request(
-    other_user_id: Any, credentials: HTTPAuthorizationCredentials = Depends(security)
+    other_user_id: UUID4, credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     current_user_id = await get_current_user_id(credentials)
-
-    # Sort the IDs to find the composite key
     user_ids = sorted([str(other_user_id), str(current_user_id)])
-    user_one = user_ids[0]
-    user_two = user_ids[1]
 
-    return await FriendService.update_friend_request(
-        user_one_id=user_one,
-        user_two_id=user_two,
+    return await FriendService.update_friendship_status(
+        user_one_id=user_ids[0],
+        user_two_id=user_ids[1],
         current_user_id=current_user_id,
         new_status=FriendshipStatus.ACCEPTED,
     )
@@ -65,20 +62,15 @@ async def accept_friend_request(
 
 @router.put("/request/{other_user_id}/decline", response_model=Friendship)
 async def decline_friend_request(
-    other_user_id: Any, credentials: HTTPAuthorizationCredentials = Depends(security)
+    other_user_id: UUID4, credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     current_user_id = await get_current_user_id(credentials)
-
-    # Sort the IDs to find the composite key
     user_ids = sorted([str(other_user_id), str(current_user_id)])
-    user_one = user_ids[0]
-    user_two = user_ids[1]
 
-    return await FriendService.update_friend_request(
-        user_one_id=user_one,
-        user_two_id=user_two,
+    return await FriendService.delete_friendship(
+        user_one_id=user_ids[0],
+        user_two_id=user_ids[1],
         current_user_id=current_user_id,
-        new_status=FriendshipStatus.DECLINED,
     )
 
 

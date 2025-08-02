@@ -47,6 +47,25 @@ class Friendship(BaseModel):
     updated_at: datetime
 
 
+class FriendProfile(BaseModel):
+    email: EmailStr
+    display_name: Optional[str] = None
+
+
+class FriendshipRequest(BaseModel):
+    user_one_id: UUID4
+    user_two_id: UUID4
+    action_user_id: UUID4
+    status: FriendshipStatus
+    created_at: datetime
+    updated_at: datetime
+
+    profile: FriendProfile
+
+
+# this is different from the FriendshipRequest because it is not nested
+# and is used for just sending whereas the FriendshipRequest is used for
+# receiving.
 class FriendRequest(BaseModel):
     email: EmailStr
 
