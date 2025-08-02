@@ -93,7 +93,7 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
             }}
             className="fixed inset-0 flex items-center justify-center z-50 p-4"
           >
-            <div className="w-full max-w-md bg-gradient-to-br from-green-700 via-green-600 to-emerald-600 rounded-2xl shadow-2xl border border-green-400/30">
+            <div className="w-full max-w-[90vw] sm:max-w-md bg-gradient-to-br from-green-700 via-green-600 to-emerald-600 rounded-2xl shadow-2xl border border-green-400/30">
               {/* Header */}
               <div className="relative p-6 text-center border-b border-green-400/20">
                 <button

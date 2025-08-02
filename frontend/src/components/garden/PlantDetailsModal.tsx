@@ -21,7 +21,7 @@ export const PlantDetailsModal: React.FC<PlantDetailsModalProps> = ({
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-[500px] h-auto bg-gradient-to-br from-green-600 to-green-800 rounded-xl shadow-2xl modal-container"
+        className="w-full max-w-[95vw] sm:max-w-[500px] h-auto bg-gradient-to-br from-green-600 to-green-800 rounded-xl shadow-2xl modal-container"
       >
         <div className="flex justify-between items-center p-4 border-b border-white/20">
           <h2 className="text-xl font-bold text-white">Plant Details</h2>

@@ -1,5 +1,6 @@
 export { GardenCanvas } from './GardenCanvas'
 export { GardenHeader } from './GardenHeader'
+export { MobileMenu } from './MobileMenu'
 export { PlantDetailsModal } from './PlantDetailsModal'
 export { WorkDialog } from './WorkDialog'
 export { TrophyDialog } from './TrophyDialog'

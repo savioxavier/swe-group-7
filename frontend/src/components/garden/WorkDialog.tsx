@@ -56,9 +56,10 @@ export const WorkDialog: React.FC<WorkDialogProps> = ({
           value={workHours}
           onChange={(e) => setWorkHours(e.target.value)}
           placeholder="2"
-          className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 text-center text-xl mb-4"
+          className="w-full px-4 py-4 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 text-center text-xl mb-4 min-h-[48px]"
           autoFocus
           onKeyPress={handleKeyPress}
+          style={{ fontSize: '16px' }} // Prevents zoom on iOS
         />
         
         <div className="flex gap-3">

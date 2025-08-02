@@ -52,12 +52,7 @@ export default function CanvasGarden() {
   const [showTrophyDialog, setShowTrophyDialog] = useState(false)
   const [showTaskPanel, setShowTaskPanel] = useState(false)
   
-  // Check if any blocking modal is open to pause animations
-  // Note: Task panel is not blocking, it's just a side display
-  const isBlockingModalOpen = showPlantCreator || showWorkDialog || showTrophyDialog || (mode === 'info' && selectedPlant !== null)
-  
   // Task panel states
-  const [hasShownDailyPanel, setHasShownDailyPanel] = useState(false)
   const [shouldAutoShowTasks, setShouldAutoShowTasks] = useState(false)
   const [focusedPlantId, setFocusedPlantId] = useState<string | null>(null)
   
@@ -67,6 +62,8 @@ export default function CanvasGarden() {
   
   // Sprite loading
   const [loadedSprites, setLoadedSprites] = useState<Map<string, HTMLImageElement>>(new Map())
+
+  const isBlockingModalOpen = showPlantCreator || showWorkDialog || showTrophyDialog || (mode === 'info' && selectedPlant !== null)
 
   // Cinematic planting system
   const {
@@ -117,12 +114,10 @@ export default function CanvasGarden() {
     })
   }, [loadedSprites])
 
-  // Canvas event handlers
   const handleCanvasMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget
     const rect = canvas.getBoundingClientRect()
     
-    // More precise coordinate calculation accounting for device pixel ratio and borders
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
     const x = (event.clientX - rect.left) * scaleX
@@ -144,7 +139,6 @@ export default function CanvasGarden() {
     const canvas = event.currentTarget
     const rect = canvas.getBoundingClientRect()
     
-    // More precise coordinate calculation accounting for device pixel ratio and borders
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
     
@@ -169,6 +163,31 @@ export default function CanvasGarden() {
       if (mode === 'plant') {
         if (clickedPlant) {
           setSelectedPlant(clickedPlant)
+          
+          setPlants(prevPlants => 
+            prevPlants.map(plant => 
+              plant.id === clickedPlant.id 
+                ? { ...plant, shouldGlow: true }
+                : plant
+            )
+          )
+          
+          setTimeout(() => {
+            setPlants(prevPlants => 
+              prevPlants.map(plant => 
+                plant.id === clickedPlant.id 
+                  ? { ...plant, shouldGlow: false }
+                  : plant
+              )
+            )
+          }, 600)
+          
+          setMode('tasks')
+          setShowTaskPanel(true)
+          setFocusedPlantId(clickedPlant.id)
+          setTimeout(() => {
+            showSuccessMsg(`Switched to ${clickedPlant.name} - ready to log work!`)
+          }, 300)
         } else {
           setSelectedPlant(null)
           if (isPositionPlantable(gridX, gridY)) {
@@ -176,11 +195,62 @@ export default function CanvasGarden() {
           }
         }
       } else if (mode === 'info') {
-        setSelectedPlant(clickedPlant || null)
+        if (clickedPlant) {
+          setSelectedPlant(clickedPlant)
+          
+          setPlants(prevPlants => 
+            prevPlants.map(plant => 
+              plant.id === clickedPlant.id 
+                ? { ...plant, shouldGlow: true }
+                : plant
+            )
+          )
+          
+          setTimeout(() => {
+            setPlants(prevPlants => 
+              prevPlants.map(plant => 
+                plant.id === clickedPlant.id 
+                  ? { ...plant, shouldGlow: false }
+                  : plant
+              )
+            )
+          }, 600)
+          
+          setMode('tasks')
+          setShowTaskPanel(true)
+          setFocusedPlantId(clickedPlant.id)
+          setShowTrophyDialog(false)
+          setTimeout(() => {
+            showSuccessMsg(`Ready to work on ${clickedPlant.name}!`)
+          }, 300)
+        } else {
+          setSelectedPlant(null)
+        }
       } else if (mode === 'tasks' && clickedPlant) {
         setSelectedPlant(clickedPlant)
+        setFocusedPlantId(clickedPlant.id)
+        
+        setPlants(prevPlants => 
+          prevPlants.map(plant => 
+            plant.id === clickedPlant.id 
+              ? { ...plant, shouldGlow: true }
+              : plant
+          )
+        )
+        
+        setTimeout(() => {
+          setPlants(prevPlants => 
+            prevPlants.map(plant => 
+              plant.id === clickedPlant.id 
+                ? { ...plant, shouldGlow: false }
+                : plant
+            )
+          )
+        }, 400)
+        
         if (clickedPlant.stage >= 5) {
           setShowTrophyDialog(true)
+          showSuccessMsg(`${clickedPlant.name} is ready to harvest!`)
         } else {
           setShowWorkDialog(true)
         }
@@ -190,19 +260,24 @@ export default function CanvasGarden() {
     }
   }
 
-  // Mode change handlers
   const handleModeChange = (newMode: 'plant' | 'info' | 'tasks') => {
     setMode(newMode)
     
     if (newMode === 'plant') {
       setHoveredPlant(null)
+      setFocusedPlantId(null)
     } else if (newMode === 'info') {
       setMousePos(null)
+      setFocusedPlantId(null)
     } else if (newMode === 'tasks') {
       setMousePos(null)
       setHoveredPlant(null)
       setSelectedPlant(null)
       setShowWorkDialog(false)
+      
+      if (!focusedPlantId) {
+        showSuccessMsg('Tasks mode activated - click any plant to focus on it!')
+      }
     }
   }
 
@@ -221,17 +296,15 @@ export default function CanvasGarden() {
     if (!token) return
     
     await trackOperation('Load Plants', async () => {
-      // IMMEDIATE FEEDBACK: Show skeleton loading state right away
       setLoading(true)
       
-      // Show skeleton plants immediately while loading
       const skeletonPlants: Plant[] = Array.from({ length: 6 }, (_, i) => ({
         id: `skeleton-${i}`,
         name: 'Loading...',
         task_description: 'Loading your plants...',
         type: 'work' as const,
-        x: (i % 6) * 100 + 50,
-        y: Math.floor(i / 6) * 100 + 150,
+        x: i % GRID_WIDTH,
+        y: Math.floor(i / GRID_WIDTH) + 1,
         stage: 0,
         experience_points: 0,
         growth_level: 0,
@@ -241,28 +314,23 @@ export default function CanvasGarden() {
         current_streak: 0,
         task_level: 1,
         task_status: 'active' as const,
-        shouldGlow: true // Gentle glow to show they're loading
+        shouldGlow: true
       }))
       setPlants(skeletonPlants)
       
-      // Load actual plants
       const apiPlants = await api.getPlants()
       const localPlants = apiPlants.map(convertApiPlantToLocal)
       setPlants(localPlants)
       setLoading(false)
       
-      // Auto-show task panel after successful load to help users get started immediately
-      // This makes the app feel more guided and actionable
       setTimeout(() => {
         setShouldAutoShowTasks(true)
         setShowTaskPanel(true)
-      }, 800) // Small delay to let the garden settle first
+      }, 800)
     })
   }, [token, trackOperation])
 
-  // Plant glow management (canvas-based)
   const startPlantGlow = (plantId: string) => {
-    // Set shouldGlow to true for the plant
     setPlants(prevPlants => 
       prevPlants.map(plant => 
         plant.id === plantId 
@@ -271,7 +339,6 @@ export default function CanvasGarden() {
       )
     )
     
-    // Remove glow after 5 seconds to match the circling dots
     setTimeout(() => {
       setPlants(prevPlants => 
         prevPlants.map(plant => 
@@ -317,10 +384,7 @@ export default function CanvasGarden() {
       setSubmissionMessage(`Great work! +${xpGained} XP gained!`)
       setShowSuccessMessage(true)
       
-      // 4. Close work dialog for better UX
-      setShowWorkDialog(false)
-      
-      // 5. Background API call - use returned data instead of refetching
+      // 4. Background API call - use returned data instead of refetching
       try {
         const workResult = await api.logTaskWork({
           plant_id: plantId,
@@ -388,7 +452,7 @@ export default function CanvasGarden() {
       )
       
       // Background API call
-      const result = await api.completeTask(plantId)
+      await api.completeTask(plantId)
       
       // Update with real data and remove glow
       setPlants(prevPlants => 
@@ -486,45 +550,23 @@ export default function CanvasGarden() {
     }, 3000)
   }
 
-  // Daily task panel logic
+  // Daily task panel logic - only show once per login session
   const shouldShowDailyTasks = useCallback(() => {
     if (!user) return false
     
     const today = new Date().toDateString()
-    const skippedToday = localStorage.getItem(`taskPanelSkipped_${today}`)
-    if (skippedToday) return false
     
-    // Reset hasShownDailyPanel for new days
-    const lastShownDate = localStorage.getItem('lastDailyPanelDate')
-    if (lastShownDate !== today) {
-      setHasShownDailyPanel(false)
-      localStorage.setItem('lastDailyPanelDate', today)
-    }
-    
-    if (hasShownDailyPanel && lastShownDate === today) return false
+    // Check if panel was already shown today
+    const shownToday = localStorage.getItem(`taskPanelShown_${today}`)
+    if (shownToday) return false
     
     // Check if user has any active plants
     if (plants.length === 0) return false
     
-    // Show daily tasks if user hasn't worked in the last 2 hours
-    // This allows the panel to show multiple times per day if there's a gap
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
-    const recentWork = plants.some(plant => {
-      if (!plant.lastWatered) return false
-      const lastWorked = new Date(plant.lastWatered)
-      return lastWorked > twoHoursAgo
-    })
-    
-    return !recentWork
-  }, [user, hasShownDailyPanel, plants])
+    // Simply show once per day on login - no time-based conditions
+    return true
+  }, [user, plants])
 
-  const skipDailyTasks = () => {
-    const today = new Date().toDateString()
-    localStorage.setItem(`taskPanelSkipped_${today}`, 'true')
-    setShouldAutoShowTasks(false)
-    setShowTaskPanel(false)
-    setMode('plant')
-  }
 
   // Effects
   useEffect(() => {
@@ -546,12 +588,14 @@ export default function CanvasGarden() {
         setShouldAutoShowTasks(true)
         setShowTaskPanel(true)
         setMode('tasks')
-        setHasShownDailyPanel(true)
         setSelectedPlant(null)
-        setShowWorkDialog(false)
+        
+        // Mark as shown in localStorage to prevent showing again today
+        const today = new Date().toDateString()
+        localStorage.setItem(`taskPanelShown_${today}`, 'true')
       }
     }
-  }, [user, plants, shouldShowDailyTasks, hasShownDailyPanel])
+  }, [user, plants, shouldShowDailyTasks])
 
   // Preload sprites
   useEffect(() => {
@@ -575,13 +619,29 @@ export default function CanvasGarden() {
 
   useEffect(() => {
     if (focusedPlantId && mode === 'tasks') {
+      // Enhanced auto-focus with better timing and visual feedback
       const timer = setTimeout(() => {
         const taskInput = document.getElementById(`task-input-${focusedPlantId}`)
         if (taskInput) {
+          // Smooth focus with visual highlight
           taskInput.focus()
-          taskInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          taskInput.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center',
+            inline: 'nearest'
+          })
+          
+          // Add a subtle pulse effect to draw attention
+          taskInput.style.animation = 'pulse 0.5s ease-in-out'
+          
+          // Clean up animation after it completes
+          setTimeout(() => {
+            if (taskInput) {
+              taskInput.style.animation = ''
+            }
+          }, 500)
         }
-      }, 300)
+      }, 200) // Reduced delay for snappier feel
       
       return () => clearTimeout(timer)
     }
@@ -589,7 +649,7 @@ export default function CanvasGarden() {
 
   return (
     <motion.div 
-      className="min-h-screen bg-gradient-to-br from-green-800 via-green-700 to-green-600"
+      className="min-h-screen bg-gradient-to-br from-green-800 via-green-700 to-green-600 flex flex-col"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.8, ease: "easeOut" }}
@@ -609,14 +669,14 @@ export default function CanvasGarden() {
         />
       </motion.div>
 
-      <div className="relative h-[calc(100vh-100px)] overflow-hidden">
+      <div className="relative flex-1 min-h-0 overflow-hidden">
         <motion.div 
           className="relative z-10 h-full"
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.7, delay: 0.4, ease: "easeOut" }}
         >
-          <div className="flex h-full p-4 justify-center items-center">
+          <div className="flex h-full p-2 sm:p-4 justify-center items-center">
             <CinematicPlotFocus
               isActive={isCinemaMode}
               focusPosition={focusPosition}
@@ -705,7 +765,6 @@ export default function CanvasGarden() {
           setFocusedPlantId(null)
           setMode('plant')
         }}
-        onSkipDaily={skipDailyTasks}
         onLogWork={logWork}
         onCompleteTask={completeTask}
         onCreateNew={() => setMode('plant')}

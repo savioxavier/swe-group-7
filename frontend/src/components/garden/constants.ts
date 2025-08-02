@@ -1,14 +1,14 @@
-// Garden configuration constants
+// Garden configuration - optimized for all screen sizes
 export const GRID_WIDTH = 6
-export const GRID_HEIGHT = 5
-export const CELL_SIZE = 100 // Reduced from 120 to make garden smaller
+export const GRID_HEIGHT = 5  
+export const CELL_SIZE = 120
 
 export const PLANTABLE_POSITIONS = [
-  { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
-  { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 }, { x: 4, y: 1 },
-  { x: 0, y: 2 }, { x: 1, y: 2 }, { x: 3, y: 2 }, { x: 4, y: 2 },
-  { x: 0, y: 3 }, { x: 1, y: 3 }, { x: 2, y: 3 }, { x: 3, y: 3 }, { x: 4, y: 3 },
-  { x: 1, y: 4 }, { x: 2, y: 4 }, { x: 3, y: 4 }
+  { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }, { x: 4, y: 0 },
+  { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 3, y: 1 }, { x: 4, y: 1 }, { x: 5, y: 1 },
+  { x: 0, y: 2 }, { x: 1, y: 2 }, { x: 2, y: 2 }, { x: 3, y: 2 }, { x: 4, y: 2 }, { x: 5, y: 2 },
+  { x: 0, y: 3 }, { x: 1, y: 3 }, { x: 2, y: 3 }, { x: 3, y: 3 }, { x: 4, y: 3 }, { x: 5, y: 3 },
+  { x: 1, y: 4 }, { x: 2, y: 4 }, { x: 3, y: 4 }, { x: 4, y: 4 }
 ]
 
 export const CATEGORY_PLANTS: Record<string, string[]> = {

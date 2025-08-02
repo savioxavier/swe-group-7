@@ -9,7 +9,6 @@ interface TaskPanelProps {
   isOpen: boolean
   shouldAutoShow: boolean
   onClose: () => void
-  onSkipDaily: () => void
   onLogWork: (plantId: string, hours: number) => Promise<void>
   onCompleteTask: (plantId: string) => Promise<void>
   onCreateNew: () => void
@@ -23,7 +22,6 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   isOpen,
   shouldAutoShow,
   onClose,
-  onSkipDaily,
   onLogWork,
   onCompleteTask,
   onCreateNew,
@@ -40,14 +38,15 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   }
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-hidden">
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto modal-container"
+        className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 w-full max-w-[95vw] sm:max-w-4xl h-[90vh] flex flex-col"
       >
-        <div className="flex items-center justify-between mb-6">
-          <div className="text-center flex-1">
+        {/* Fixed Header */}
+        <div className="p-4 sm:p-6 pb-4 border-b border-white/10">
+          <div className="text-center">
             {shouldAutoShow ? (
               <>
                 <h2 className="text-2xl font-bold text-white mb-2">Good morning!</h2>
@@ -60,52 +59,41 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
               </>
             )}
           </div>
-          <div className="flex items-center space-x-2 ml-4">
-            {shouldAutoShow && (
-              <button
-                onClick={onSkipDaily}
-                className="px-3 py-1 text-sm text-white/70 hover:text-white/90 hover:bg-white/10 rounded transition-colors"
-              >
-                Skip for today
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="text-white/70 hover:text-white text-2xl font-bold"
-            >
-              ×
-            </button>
+        </div>
+
+        {/* Fixed Stats Section */}
+        <div className="px-4 sm:px-6 py-4 border-b border-white/10">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white/10 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-white">{plants.filter(p => p.task_status === 'active').length}</div>
+              <div className="text-xs text-green-200">Active Tasks</div>
+            </div>
+            <div className="bg-white/10 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-white">
+                {plants.filter(p => {
+                  if (!p.lastWatered) return false
+                  const today = new Date().toDateString()
+                  return new Date(p.lastWatered).toDateString() === today
+                }).length}
+              </div>
+              <div className="text-xs text-green-200">Worked Today</div>
+            </div>
+            <div className="bg-white/10 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-white">
+                {Math.max(...plants.map(p => p.current_streak || 0), 0)}
+              </div>
+              <div className="text-xs text-green-200">Best Streak</div>
+            </div>
+            <div className="bg-white/10 rounded-lg p-3 text-center">
+              <div className="text-xl font-bold text-white">1</div>
+              <div className="text-xs text-green-200">Your Level</div>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white/10 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-white">{plants.filter(p => p.task_status === 'active').length}</div>
-            <div className="text-xs text-green-200">Active Tasks</div>
-          </div>
-          <div className="bg-white/10 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-white">
-              {plants.filter(p => {
-                if (!p.lastWatered) return false
-                const today = new Date().toDateString()
-                return new Date(p.lastWatered).toDateString() === today
-              }).length}
-            </div>
-            <div className="text-xs text-green-200">Worked Today</div>
-          </div>
-          <div className="bg-white/10 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-white">
-              {Math.max(...plants.map(p => p.current_streak || 0), 0)}
-            </div>
-            <div className="text-xs text-green-200">Best Streak</div>
-          </div>
-          <div className="bg-white/10 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-white">1</div>
-            <div className="text-xs text-green-200">Your Level</div>
-          </div>
-        </div>
-
-        <div className="space-y-4 max-h-96 overflow-y-auto">
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+          <div className="space-y-4">
           {plants.map((plant) => (
             <div 
               key={plant.id} 
@@ -157,9 +145,10 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
                     min="0"
                     max="24"
                     placeholder="Hours worked today"
-                    className={`flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 ${
+                    className={`flex-1 px-3 py-3 bg-white/10 border border-white/20 rounded text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 min-h-[44px] ${
                       focusedPlantId === plant.id ? 'ring-2 ring-green-500' : ''
                     }`}
+                    style={{ fontSize: '16px' }} // Prevents zoom on iOS
                     onKeyPress={async (e) => {
                       if (e.key === 'Enter') {
                         const hours = parseFloat((e.target as HTMLInputElement).value)
@@ -173,7 +162,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
                   <button
                     onClick={() => onCompleteTask(plant.id)}
                     disabled={plant.stage < 4}
-                    className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+                    className={`px-4 py-3 rounded text-sm font-medium transition-colors min-h-[44px] ${
                       plant.stage >= 4 
                         ? 'bg-green-600 hover:bg-green-700 text-white' 
                         : 'bg-gray-500 text-gray-300 cursor-not-allowed'
@@ -194,29 +183,40 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
             </div>
           ))}
           
-          {plants.length === 0 && (
-            <div className="text-center py-8">
-              <p className="text-white/70 mb-4">No tasks yet!</p>
+            {plants.length === 0 && (
+              <div className="text-center py-8">
+                <p className="text-white/70 mb-4">No tasks yet!</p>
+                <button
+                  onClick={onCreateNew}
+                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  Create Your First Task
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Fixed Footer */}
+        <div className="p-4 sm:p-6 pt-4 border-t border-white/10">
+          <div className="flex items-center justify-between">
+            {plants.length > 0 && (
               <button
                 onClick={onCreateNew}
-                className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
-              >
-                Create Your First Task
-              </button>
-            </div>
-          )}
-          
-          {plants.length > 0 && (
-            <div className="text-center pt-4 border-t border-white/10">
-              <button
-                onClick={onCreateNew}
-                className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2 mx-auto"
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
               >
                 <Plus className="w-4 h-4" />
                 <span>Add New Task</span>
               </button>
-            </div>
-          )}
+            )}
+            
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-medium transition-colors ml-auto"
+            >
+              Close Tasks
+            </button>
+          </div>
         </div>
       </motion.div>
     </div>,
