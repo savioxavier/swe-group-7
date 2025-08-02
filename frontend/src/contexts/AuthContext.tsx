@@ -90,27 +90,36 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      // Auto-harvest completed trophy plants before logout
-      try {
-        await api.harvestUserTrophies()
-      } catch (harvestError) {
-        // Don't fail logout if harvest fails
-        console.error('Auto-harvest failed during logout:', harvestError)
-      }
+      const currentToken = token
+      setToken(null)
+      setUser(null)
       
-      // Call the backend logout endpoint 
-      await api.logout()
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      localStorage.removeItem('tokenExpiry')
+      localStorage.removeItem('lastDailyPanelDate')
+      const today = new Date().toDateString()
+      localStorage.removeItem(`taskPanelSkipped_${today}`)
+      
+      if (currentToken) {
+        Promise.all([
+          api.harvestUserTrophies().catch(error => 
+            console.error('Auto-harvest failed during logout:', error)
+          ),
+          api.logout().catch(error => 
+            console.error('Backend logout failed:', error)
+          )
+        ]).catch(error => {
+          console.error('Background logout cleanup failed:', error)
+        })
+      }
     } catch (error) {
-      console.error('🚪 Error during logout:', error)
-      // Continue with local logout even if backend call fails
-    } finally {
-      // Always clear local storage
+      console.error('Error during logout:', error)
       setToken(null)
       setUser(null)
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       localStorage.removeItem('tokenExpiry')
-      // Clear daily panel states for next login
       localStorage.removeItem('lastDailyPanelDate')
       const today = new Date().toDateString()
       localStorage.removeItem(`taskPanelSkipped_${today}`)

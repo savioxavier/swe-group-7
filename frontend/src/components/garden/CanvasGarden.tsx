@@ -10,6 +10,7 @@ import { XPGainEffects } from '../animations/XPGainEffects'
 import { useCinematicPlanting } from '../../hooks/useCinematicPlanting'
 import { usePlantGrowthAnimations } from '../../hooks/usePlantGrowthAnimations'
 import { useXPAnimations } from '../../hooks/useXPAnimations'
+import { usePerformanceMonitoring } from '../../hooks/usePerformanceMonitoring'
 import {
   GardenCanvas,
   GardenHeader,
@@ -18,6 +19,7 @@ import {
   TrophyDialog,
   SuccessMessage,
   TaskPanel,
+  LoadingState,
   GRID_WIDTH,
   GRID_HEIGHT,
   CELL_SIZE,
@@ -30,6 +32,9 @@ import type { Plant } from './'
 
 export default function CanvasGarden() {
   const { user, logout, token } = useAuth()
+  
+  // Performance monitoring
+  const { trackOperation } = usePerformanceMonitoring()
   
   // Plant and UI state
   const [plants, setPlants] = useState<Plant[]>([])
@@ -116,8 +121,12 @@ export default function CanvasGarden() {
   const handleCanvasMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget
     const rect = canvas.getBoundingClientRect()
-    const x = event.clientX - rect.left
-    const y = event.clientY - rect.top
+    
+    // More precise coordinate calculation accounting for device pixel ratio and borders
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const x = (event.clientX - rect.left) * scaleX
+    const y = (event.clientY - rect.top) * scaleY
 
     if (mode === 'plant') {
       setMousePos({ x, y })
@@ -134,14 +143,19 @@ export default function CanvasGarden() {
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget
     const rect = canvas.getBoundingClientRect()
+    
+    // More precise coordinate calculation accounting for device pixel ratio and borders
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    
     let x: number, y: number
     
     if ('touches' in event && event.touches.length > 0) {
-      x = event.touches[0].clientX - rect.left
-      y = event.touches[0].clientY - rect.top
+      x = (event.touches[0].clientX - rect.left) * scaleX
+      y = (event.touches[0].clientY - rect.top) * scaleY
     } else if ('clientX' in event) {
-      x = event.clientX - rect.left
-      y = event.clientY - rect.top
+      x = (event.clientX - rect.left) * scaleX
+      y = (event.clientY - rect.top) * scaleY
     } else {
       return
     }
@@ -205,17 +219,46 @@ export default function CanvasGarden() {
 
   const loadPlants = useCallback(async () => {
     if (!token) return
-    try {
+    
+    await trackOperation('Load Plants', async () => {
+      // IMMEDIATE FEEDBACK: Show skeleton loading state right away
       setLoading(true)
+      
+      // Show skeleton plants immediately while loading
+      const skeletonPlants: Plant[] = Array.from({ length: 6 }, (_, i) => ({
+        id: `skeleton-${i}`,
+        name: 'Loading...',
+        task_description: 'Loading your plants...',
+        type: 'work' as const,
+        x: (i % 6) * 100 + 50,
+        y: Math.floor(i / 6) * 100 + 150,
+        stage: 0,
+        experience_points: 0,
+        growth_level: 0,
+        lastWatered: new Date(),
+        plantSprite: 'carrot',
+        decay_status: 'healthy' as const,
+        current_streak: 0,
+        task_level: 1,
+        task_status: 'active' as const,
+        shouldGlow: true // Gentle glow to show they're loading
+      }))
+      setPlants(skeletonPlants)
+      
+      // Load actual plants
       const apiPlants = await api.getPlants()
       const localPlants = apiPlants.map(convertApiPlantToLocal)
       setPlants(localPlants)
-    } catch (error) {
-      console.error('Failed to load plants:', error)
-    } finally {
       setLoading(false)
-    }
-  }, [token])
+      
+      // Auto-show task panel after successful load to help users get started immediately
+      // This makes the app feel more guided and actionable
+      setTimeout(() => {
+        setShouldAutoShowTasks(true)
+        setShowTaskPanel(true)
+      }, 800) // Small delay to let the garden settle first
+    })
+  }, [token, trackOperation])
 
   // Plant glow management (canvas-based)
   const startPlantGlow = (plantId: string) => {
@@ -240,63 +283,145 @@ export default function CanvasGarden() {
     }, 5000)
   }
 
+  // Performance optimization: Use returned API data instead of refetching
+
   const logWork = async (plantId: string, hours: number) => {
-    try {
+    await trackOperation('Log Work', async () => {
       const plantBefore = plants.find(p => p.id === plantId)
       const stageBefore = plantBefore?.stage || 0
       
-      await api.logTaskWork({
-        plant_id: plantId,
-        hours_worked: hours
-      })
-      
+      // IMMEDIATE FEEDBACK: Show visual changes right away
       const xpGained = hours * 100
+      
+      // 1. Update plant optimistically with glow effect
+      setPlants(prevPlants => 
+        prevPlants.map(plant => {
+          if (plant.id === plantId) {
+            const newXP = plant.experience_points + xpGained
+            const newStage = Math.min(5, Math.floor(newXP / 100))
+            return { 
+              ...plant, 
+              experience_points: newXP, 
+              stage: newStage,
+              shouldGlow: true // Immediate visual feedback
+            }
+          }
+          return plant
+        })
+      )
+      
+      // 2. Trigger XP animation immediately
       triggerXPAnimation(plantId, xpGained)
       
-      const apiPlants = await api.getPlants()
-      const updatedPlants = apiPlants.map(convertApiPlantToLocal)
-      setPlants(updatedPlants)
+      // 3. Show success message immediately
+      setSubmissionMessage(`Great work! +${xpGained} XP gained!`)
+      setShowSuccessMessage(true)
       
-      const plantAfter = updatedPlants.find(p => p.id === plantId)
-      const stageAfter = plantAfter?.stage || 0
-      
-      // Close work dialog first
+      // 4. Close work dialog for better UX
       setShowWorkDialog(false)
       
-      if (plantAfter && stageAfter > stageBefore) {
-        const plant = updatedPlants.find(p => p.id === plantId)
-        if (plant) {
-          triggerGrowthAnimation(plantId, stageBefore, stageAfter, { x: plant.x, y: plant.y })
-          
-          // Trigger canvas glow after a delay
-          setTimeout(() => {
-            // Canvas-based golden glow
-            startPlantGlow(plantId)
-            // Deselect everything when glow animation starts
-            setSelectedPlant(null)
-            setShowWorkDialog(false)
-            setShowTrophyDialog(false)
-          }, 2800) // Start glow after growth animation mostly completes
+      // 5. Background API call - use returned data instead of refetching
+      try {
+        const workResult = await api.logTaskWork({
+          plant_id: plantId,
+          hours_worked: hours
+        })
+        
+        // 6. Use the returned data to update the plant (no second API call needed!)
+        setPlants(prevPlants => 
+          prevPlants.map(plant => {
+            if (plant.id === plantId) {
+              return {
+                ...plant,
+                experience_points: workResult.new_growth_level ? (workResult.new_growth_level / 20) * 100 : plant.experience_points,
+                stage: workResult.new_task_level || plant.stage,
+                growth_level: workResult.new_growth_level || plant.growth_level,
+                current_streak: workResult.current_streak || plant.current_streak,
+                shouldGlow: false // Remove optimistic glow, show real state
+              }
+            }
+            return plant
+          })
+        )
+        
+        // 7. Check for growth and trigger animations using returned data
+        const stageAfter = workResult.new_task_level || stageBefore
+        
+        if (stageAfter > stageBefore) {
+          const plantAfter = plants.find(p => p.id === plantId)
+          if (plantAfter) {
+            triggerGrowthAnimation(plantId, stageBefore, stageAfter, { x: plantAfter.x, y: plantAfter.y })
+            
+            // Trigger canvas glow after a delay
+            setTimeout(() => {
+              startPlantGlow(plantId)
+            }, 2800)
+          }
         }
+        
+        // 8. Update user progress without waiting
+        loadUserProgress()
+        
+      } catch (error) {
+        console.error('Failed to log work:', error)
+        // If API fails, revert optimistic update
+        setPlants(prevPlants => 
+          prevPlants.map(plant => 
+            plant.id === plantId ? { ...plant, shouldGlow: false } : plant
+          )
+        )
+        setSubmissionMessage('Failed to save work. Please try again.')
+        setShowSuccessMessage(true)
       }
-      
-    } catch (error) {
-      console.error('Failed to log work:', error)
-      alert('Failed to log work. Please try again.')
-    }
+    })
   }
 
   const completeTask = async (plantId: string) => {
     try {
-      await api.completeTask(plantId)
-      await loadPlants()
+      // Optimistic update - mark as completed immediately
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId 
+            ? { ...plant, task_status: 'completed', shouldGlow: true }
+            : plant
+        )
+      )
+      
+      // Background API call
+      const result = await api.completeTask(plantId)
+      
+      // Update with real data and remove glow
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId 
+            ? { ...plant, task_status: 'completed', shouldGlow: false }
+            : plant
+        )
+      )
+      
+      // Show success message
+      setSubmissionMessage('Task completed! It will be auto-harvested in 6 hours.')
+      setShowSuccessMessage(true)
+      
     } catch (error) {
       console.error('Failed to complete task:', error)
+      
+      // Revert optimistic update on error
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId 
+            ? { ...plant, shouldGlow: false } // Revert to original state
+            : plant
+        )
+      )
+      
       // Don't show alert for already completed tasks, just log it
       if (error instanceof Error && error.message.includes('already completed')) {
-        // Task was already completed, silently continue
+        setSubmissionMessage('Task was already completed!')
+        setShowSuccessMessage(true)
       } else {
-        alert('Failed to complete task. Please try again.')
+        setSubmissionMessage('Failed to complete task. Please try again.')
+        setShowSuccessMessage(true)
       }
     }
   }
@@ -480,6 +605,7 @@ export default function CanvasGarden() {
           mode={mode}
           onModeChange={handleModeChange}
           onLogout={logout}
+          plants={plants}
         />
       </motion.div>
 
@@ -621,16 +747,7 @@ export default function CanvasGarden() {
         />
       ))}
       
-      {loading && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
-          <div className="card">
-            <div className="flex items-center space-x-3">
-              <div className="loading-spinner"></div>
-              <span className="text-white font-medium">Loading your garden...</span>
-            </div>
-          </div>
-        </div>
-      )}
+      <LoadingState isLoading={loading} />
     </motion.div>
   )
 }

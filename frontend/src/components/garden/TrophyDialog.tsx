@@ -20,6 +20,8 @@ export const TrophyDialog: React.FC<TrophyDialogProps> = ({
   if (!isOpen || !plant) return null
 
   const handleAcknowledge = async () => {
+    onClose()
+    
     if (onCompleteTask && plant.id && plant.task_status !== 'completed') {
       try {
         await onCompleteTask(plant.id)
@@ -27,10 +29,11 @@ export const TrophyDialog: React.FC<TrophyDialogProps> = ({
         console.error('Failed to complete task:', error)
       }
     }
-    onClose()
   }
 
   const handleClose = async () => {
+    onClose()
+    
     if (onCompleteTask && plant.id && plant.task_status !== 'completed') {
       try {
         await onCompleteTask(plant.id)
@@ -38,7 +41,6 @@ export const TrophyDialog: React.FC<TrophyDialogProps> = ({
         console.error('Failed to complete task:', error)
       }
     }
-    onClose()
   }
 
   return createPortal(

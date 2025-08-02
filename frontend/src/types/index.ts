@@ -71,6 +71,10 @@ export interface TaskWorkResponse {
   user_id: string
   hours_worked: number
   experience_gained: number
+  new_task_level?: number
+  new_growth_level?: number
+  current_streak?: number
+  last_worked_date?: string
   description?: string
   created_at: string
 }
