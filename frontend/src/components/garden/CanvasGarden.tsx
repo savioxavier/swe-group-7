@@ -12,7 +12,6 @@ import { XPGainEffects } from '../animations/XPGainEffects'
 import { useCinematicPlanting } from '../../hooks/useCinematicPlanting'
 import { usePlantGrowthAnimations } from '../../hooks/usePlantGrowthAnimations'
 import { useXPAnimations } from '../../hooks/useXPAnimations'
-import { usePerformanceMonitoring } from '../../hooks/usePerformanceMonitoring'
 import {
   GardenCanvas,
   GardenHeader,
@@ -35,14 +34,8 @@ import type { Plant } from './'
 
 export default function CanvasGarden() {
   const { user, logout, token, isNewLogin } = useAuth()
-  
-  // Performance monitoring
-  const { trackOperation } = usePerformanceMonitoring()
-  
-  // Sound effects
   const sounds = useSounds()
   
-  // Plant and UI state
   const [plants, setPlants] = useState<Plant[]>([])
   const [loading, setLoading] = useState(true)
   const [userProgress, setUserProgress] = useState<UserProgressResponse | null>(null)
@@ -62,6 +55,16 @@ export default function CanvasGarden() {
   const [shouldAutoShowTasks, setShouldAutoShowTasks] = useState(false)
   const [focusedPlantId, setFocusedPlantId] = useState<string | null>(null)
   const [taskPanelClosedThisSession, setTaskPanelClosedThisSession] = useState(false)
+  
+  // Daily decay tracking
+  const [dailyDecayInfo, setDailyDecayInfo] = useState<{
+    decay_applied?: number;
+    level?: number;
+    streak?: number;
+    base_decay?: number;
+    streak_protection?: number;
+    message?: string;
+  } | null>(null)
   
   // Success message states
   const [submissionMessage, setSubmissionMessage] = useState('')
@@ -239,10 +242,10 @@ export default function CanvasGarden() {
     try {
       await api.deletePlant(plantId)
       setPlants(prevPlants => prevPlants.filter(p => p.id !== plantId))
-      showSuccessMsg('🗑️ Plant deleted successfully')
+      showSuccessMsg('Plant deleted successfully')
     } catch (error) {
       console.error('Failed to delete plant:', error)
-      showSuccessMsg('❌ Failed to delete plant')
+      showSuccessMsg('Failed to delete plant')
     }
   }
 
@@ -255,10 +258,10 @@ export default function CanvasGarden() {
             : p
         )
       )
-      showSuccessMsg(`✏️ Plant renamed to "${newName}" (local only)`)
+      showSuccessMsg(`Plant renamed to "${newName}" (local only)`)
     } catch (error) {
       console.error('Failed to rename plant:', error)
-      showSuccessMsg('❌ Failed to rename plant')
+      showSuccessMsg('Failed to rename plant')
     }
   }
 
@@ -274,7 +277,7 @@ export default function CanvasGarden() {
         closeAllModalsExcept(['plantDetails'])
         setShowPlantDetails(true)
         setPlantContextMenu(null) // Close context menu
-        showSuccessMsg(`📊 Viewing ${plant.name} analytics and details`)
+        showSuccessMsg(`Viewing ${plant.name} analytics and details`)
         break
       }
         
@@ -284,11 +287,11 @@ export default function CanvasGarden() {
         if (plant.stage >= 5) {
           // Plant is ready to harvest
           setShowTrophyDialog(true)
-          showSuccessMsg(`🏆 Harvesting ${plant.name}!`)
+          showSuccessMsg(`Harvesting ${plant.name}!`)
         } else {
           // Plant needs more work - show work dialog
           setShowWorkDialog(true)
-          showSuccessMsg(`⏰ How many hours did you work on ${plant.name}?`)
+          showSuccessMsg(`How many hours did you work on ${plant.name}?`)
         }
         break
         
@@ -304,7 +307,7 @@ export default function CanvasGarden() {
       case 'harvest':
         // Force harvest (for mature plants)
         setShowTrophyDialog(true)
-        showSuccessMsg(`🏆 Harvesting ${plant.name}!`)
+        showSuccessMsg(`Harvesting ${plant.name}!`)
         break
     }
   }
@@ -323,37 +326,33 @@ export default function CanvasGarden() {
   const loadPlants = useCallback(async () => {
     if (!token) return
     
-    await trackOperation('Load Plants', async () => {
-      setLoading(true)
-      
-      const skeletonPlants: Plant[] = Array.from({ length: 6 }, (_, i) => ({
-        id: `skeleton-${i}`,
-        name: 'Loading...',
-        task_description: 'Loading your plants...',
-        type: 'work' as const,
-        x: i % GRID_WIDTH,
-        y: Math.floor(i / GRID_WIDTH) + 1,
-        stage: 0,
-        experience_points: 0,
-        growth_level: 0,
-        lastWatered: new Date(),
-        plantSprite: 'carrot',
-        decay_status: 'healthy' as const,
-        current_streak: 0,
-        task_level: 1,
-        task_status: 'active' as const,
-        shouldGlow: true
-      }))
-      setPlants(skeletonPlants)
-      
-      const apiPlants = await api.getPlants()
-      const localPlants = apiPlants.map(convertApiPlantToLocal)
-      setPlants(localPlants)
-      setLoading(false)
-      
-      // Remove automatic task panel opening - only show on actual login
-    })
-  }, [token, trackOperation])
+    setLoading(true)
+    
+    const skeletonPlants: Plant[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `skeleton-${i}`,
+      name: 'Loading...',
+      task_description: 'Loading your plants...',
+      type: 'work' as const,
+      x: i % GRID_WIDTH,
+      y: Math.floor(i / GRID_WIDTH) + 1,
+      stage: 0,
+      experience_points: 0,
+      growth_level: 0,
+      lastWatered: new Date(),
+      plantSprite: 'carrot',
+      decay_status: 'healthy' as const,
+      current_streak: 0,
+      task_level: 1,
+      task_status: 'active' as const,
+      shouldGlow: true
+    }))
+    setPlants(skeletonPlants)
+    
+    const apiPlants = await api.getPlants()
+    const localPlants = apiPlants.map(convertApiPlantToLocal)
+    setPlants(localPlants)
+    setLoading(false)
+  }, [token])
 
   const startPlantGlow = (plantId: string) => {
     setPlants(prevPlants => 
@@ -375,101 +374,84 @@ export default function CanvasGarden() {
     }, 5000)
   }
 
-  // Performance optimization: Use returned API data instead of refetching
-
   const logWork = async (plantId: string, hours: number) => {
-    await trackOperation('Log Work', async () => {
-      const plantBefore = plants.find(p => p.id === plantId)
-      const stageBefore = plantBefore?.stage || 0
+    const plantBefore = plants.find(p => p.id === plantId)
+    const stageBefore = plantBefore?.stage || 0
+    
+    const xpGained = hours * 100
+    sounds.playPlant('water')
+    
+    setPlants(prevPlants => 
+      prevPlants.map(plant => {
+        if (plant.id === plantId) {
+          const newXP = plant.experience_points + xpGained
+          const newStage = Math.min(5, Math.floor(newXP / 100))
+          return { 
+            ...plant, 
+            experience_points: newXP, 
+            stage: newStage,
+            shouldGlow: true
+          }
+        }
+        return plant
+      })
+    )
+    
+    triggerXPAnimation(plantId, xpGained)
+    sounds.playXPGainSequence(xpGained)
+    if (plantBefore?.is_multi_step) {
+      setSubmissionMessage(`Time logged! +${xpGained} XP gained. Use "Complete Step" to mark steps as done.`)
+    } else {
+      setSubmissionMessage(`Great work! +${xpGained} XP gained!`)
+    }
+    setShowSuccessMessage(true)
+    
+    try {
+      const workResult = await api.logTaskWork({
+        plant_id: plantId,
+        hours_worked: hours
+      })
       
-      // IMMEDIATE FEEDBACK: Show visual changes right away
-      const xpGained = hours * 100
-      
-      // Play water/work sound immediately
-      sounds.playPlant('water')
-      
-      // 1. Update plant optimistically with glow effect
       setPlants(prevPlants => 
         prevPlants.map(plant => {
           if (plant.id === plantId) {
-            const newXP = plant.experience_points + xpGained
-            const newStage = Math.min(5, Math.floor(newXP / 100))
-            return { 
-              ...plant, 
-              experience_points: newXP, 
-              stage: newStage,
-              shouldGlow: true // Immediate visual feedback
+            return {
+              ...plant,
+              experience_points: workResult.new_growth_level ? (workResult.new_growth_level / 20) * 100 : plant.experience_points,
+              stage: workResult.new_task_level || plant.stage,
+              growth_level: workResult.new_growth_level || plant.growth_level,
+              current_streak: workResult.current_streak || plant.current_streak,
+              shouldGlow: false
             }
           }
           return plant
         })
       )
       
-      // 2. Trigger XP animation immediately with sound
-      triggerXPAnimation(plantId, xpGained)
-      sounds.playXPGainSequence(xpGained)
+      const stageAfter = workResult.new_task_level || stageBefore
       
-      // 3. Show success message immediately
-      setSubmissionMessage(`Great work! +${xpGained} XP gained!`)
-      setShowSuccessMessage(true)
-      
-      // 4. Background API call - use returned data instead of refetching
-      try {
-        const workResult = await api.logTaskWork({
-          plant_id: plantId,
-          hours_worked: hours
-        })
-        
-        // 6. Use the returned data to update the plant (no second API call needed!)
-        setPlants(prevPlants => 
-          prevPlants.map(plant => {
-            if (plant.id === plantId) {
-              return {
-                ...plant,
-                experience_points: workResult.new_growth_level ? (workResult.new_growth_level / 20) * 100 : plant.experience_points,
-                stage: workResult.new_task_level || plant.stage,
-                growth_level: workResult.new_growth_level || plant.growth_level,
-                current_streak: workResult.current_streak || plant.current_streak,
-                shouldGlow: false // Remove optimistic glow, show real state
-              }
-            }
-            return plant
-          })
-        )
-        
-        // 7. Check for growth and trigger animations using returned data
-        const stageAfter = workResult.new_task_level || stageBefore
-        
-        if (stageAfter > stageBefore) {
-          const plantAfter = plants.find(p => p.id === plantId)
-          if (plantAfter) {
-            triggerGrowthAnimation(plantId, stageBefore, stageAfter, { x: plantAfter.x, y: plantAfter.y })
-            
-            // Play growth sound sequence based on stage
-            sounds.playGrowthSequence(stageAfter)
-            
-            // Trigger canvas glow after a delay
-            setTimeout(() => {
-              startPlantGlow(plantId)
-            }, 2800)
-          }
+      if (stageAfter > stageBefore) {
+        const plantAfter = plants.find(p => p.id === plantId)
+        if (plantAfter) {
+          triggerGrowthAnimation(plantId, stageBefore, stageAfter, { x: plantAfter.x, y: plantAfter.y })
+          sounds.playGrowthSequence(stageAfter)
+          setTimeout(() => {
+            startPlantGlow(plantId)
+          }, 2800)
         }
-        
-        // 8. Update user progress without waiting
-        loadUserProgress()
-        
-      } catch (error) {
-        console.error('Failed to log work:', error)
-        // If API fails, revert optimistic update
-        setPlants(prevPlants => 
-          prevPlants.map(plant => 
-            plant.id === plantId ? { ...plant, shouldGlow: false } : plant
-          )
-        )
-        setSubmissionMessage('Failed to save work. Please try again.')
-        setShowSuccessMessage(true)
       }
-    })
+      loadUserProgress()
+      
+    } catch (error) {
+      console.error('Failed to log work:', error)
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId ? { ...plant, shouldGlow: false } : plant
+        )
+      )
+      setSubmissionMessage('Failed to save work. Please try again.')
+      setShowSuccessMessage(true)
+    }
   }
 
   const completeTask = async (plantId: string) => {
@@ -527,55 +509,61 @@ export default function CanvasGarden() {
   }
 
   const completeTaskStep = async (plantId: string, stepId: string, hours?: number) => {
-    await trackOperation('Complete Step', async () => {
-      const plantBefore = plants.find(p => p.id === plantId)
-      const stageBefore = plantBefore?.stage || 0
-      
-      // Play milestone completion sound
-      sounds.playAchievement('achievement')
-      
-      // Optimistic update - mark step as completed
-      setPlants(prevPlants => 
-        prevPlants.map(plant => {
-          if (plant.id === plantId && plant.task_steps) {
-            const updatedSteps = plant.task_steps.map(step => 
-              step.id === stepId 
-                ? { ...step, is_completed: true, completed_at: new Date().toISOString() }
-                : step
-            )
-            const completedSteps = updatedSteps.filter(s => s.is_completed).length
-            const newStage = Math.min(5, completedSteps) // Milestone-based growth
-            
-            return { 
-              ...plant, 
-              task_steps: updatedSteps,
-              completed_steps: completedSteps,
-              stage: newStage,
-              shouldGlow: true
-            }
+    const plantBefore = plants.find(p => p.id === plantId)
+    const stageBefore = plantBefore?.stage || 0
+    
+    sounds.playAchievement('achievement')
+    
+    setPlants(prevPlants => 
+      prevPlants.map(plant => {
+        if (plant.id === plantId && plant.task_steps) {
+          const updatedSteps = plant.task_steps.map(step => 
+            step.id === stepId 
+              ? { ...step, is_completed: true, completed_at: new Date().toISOString() }
+              : step
+          )
+          const completedSteps = updatedSteps.filter(s => s.is_completed).length
+          const totalSteps = plant.total_steps || updatedSteps.length
+          const newStage = Math.min(5, completedSteps)
+          const isTaskCompleted = completedSteps === totalSteps
+          
+          return { 
+            ...plant, 
+            task_steps: updatedSteps,
+            completed_steps: completedSteps,
+            total_steps: totalSteps,
+            stage: newStage,
+            shouldGlow: true,
+            task_status: isTaskCompleted ? 'completed' : plant.task_status,
+            completion_date: isTaskCompleted ? new Date() : plant.completion_date
           }
-          return plant
-        })
-      )
-      
-      try {
-        // API call for step completion
-        const stepResult = await api.completeTaskStep({
-          plant_id: plantId,
-          step_id: stepId,
-          hours_worked: hours
-        })
+        }
+        return plant
+      })
+    )
+    
+    try {
+      const stepResult = await api.completeTaskStep({
+        plant_id: plantId,
+        step_id: stepId,
+        hours_worked: hours
+      })
         
-        // Update with API response
+        // Always just update the plant state - don't reload unless necessary
         setPlants(prevPlants => 
           prevPlants.map(plant => {
             if (plant.id === plantId) {
-              return {
+              const updatedPlant = {
                 ...plant,
                 stage: stepResult.new_growth_stage,
                 experience_points: plant.experience_points + stepResult.experience_gained,
-                shouldGlow: false
+                shouldGlow: false,
+                completed_steps: stepResult.completed_steps,
+                total_steps: stepResult.total_steps,
+                task_status: stepResult.task_completed ? 'completed' : plant.task_status,
+                completion_date: stepResult.task_completed ? new Date() : plant.completion_date
               }
+              return updatedPlant
             }
             return plant
           })
@@ -598,8 +586,17 @@ export default function CanvasGarden() {
         
         // Show completion message
         if (stepResult.task_completed) {
-          setSubmissionMessage('🎉 All steps completed! Task finished!')
+          setSubmissionMessage('All steps completed! Task finished!')
           sounds.playAchievement('task_complete')
+          
+          // Trigger trophy dialog after a short delay
+          setTimeout(() => {
+            const completedPlant = plants.find(p => p.id === plantId && p.task_status === 'completed')
+            if (completedPlant) {
+              setSelectedPlant(completedPlant)
+              setShowTrophyDialog(true)
+            }
+          }, 2000)
         } else {
           setSubmissionMessage(`Step completed! ${stepResult.completed_steps}/${stepResult.total_steps} done`)
         }
@@ -618,147 +615,129 @@ export default function CanvasGarden() {
         setSubmissionMessage('Failed to complete step. Please try again.')
         setShowSuccessMessage(true)
       }
-    })
   }
 
   const updateTaskStepPartial = async (plantId: string, stepId: string, hours: number) => {
-    await trackOperation('Partial Step Work', async () => {
-      // Play work sound
-      sounds.playPlant('water')
+    sounds.playPlant('water')
+    
+    setPlants(prevPlants => 
+      prevPlants.map(plant => {
+        if (plant.id === plantId && plant.task_steps) {
+          const updatedSteps = plant.task_steps.map(step => 
+            step.id === stepId 
+              ? { 
+                  ...step, 
+                  is_partial: true, 
+                  work_hours: (step.work_hours || 0) + hours 
+                }
+              : step
+          )
+          
+          return { 
+            ...plant, 
+            task_steps: updatedSteps,
+            shouldGlow: true
+          }
+        }
+        return plant
+      })
+    )
+    
+    try {
+      const partialResult = await api.updateTaskStepPartial({
+        plant_id: plantId,
+        step_id: stepId,
+        hours_worked: hours,
+        mark_partial: true
+      })
       
-      // Optimistic update - mark step as partial and add hours
       setPlants(prevPlants => 
         prevPlants.map(plant => {
-          if (plant.id === plantId && plant.task_steps) {
-            const updatedSteps = plant.task_steps.map(step => 
-              step.id === stepId 
-                ? { 
-                    ...step, 
-                    is_partial: true, 
-                    work_hours: (step.work_hours || 0) + hours 
-                  }
-                : step
-            )
-            
-            return { 
-              ...plant, 
-              task_steps: updatedSteps,
-              shouldGlow: true
+          if (plant.id === plantId) {
+            return {
+              ...plant,
+              experience_points: plant.experience_points + partialResult.experience_gained,
+              growth_level: partialResult.new_growth_level,
+              shouldGlow: false
             }
           }
           return plant
         })
       )
       
-      try {
-        // API call for partial work
-        const partialResult = await api.updateTaskStepPartial({
-          plant_id: plantId,
-          step_id: stepId,
-          hours_worked: hours,
-          mark_partial: true
-        })
-        
-        // Update with API response
-        setPlants(prevPlants => 
-          prevPlants.map(plant => {
-            if (plant.id === plantId) {
-              return {
-                ...plant,
-                experience_points: plant.experience_points + partialResult.experience_gained,
-                growth_level: partialResult.new_growth_level,
-                shouldGlow: false
-              }
-            }
-            return plant
-          })
+      triggerXPAnimation(plantId, partialResult.experience_gained)
+      sounds.playXPGainSequence(partialResult.experience_gained)
+      
+      setSubmissionMessage(`Progress added! +${partialResult.experience_gained} XP, ${hours}h logged`)
+      setShowSuccessMessage(true)
+      loadUserProgress()
+      
+    } catch (error) {
+      console.error('Failed to log partial work:', error)
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId ? { ...plant, shouldGlow: false } : plant
         )
-        
-        // Trigger XP animation (smaller for partial work)
-        triggerXPAnimation(plantId, partialResult.experience_gained)
-        sounds.playXPGainSequence(partialResult.experience_gained)
-        
-        // Show progress message
-        setSubmissionMessage(`Progress added! +${partialResult.experience_gained} XP, ${hours}h logged`)
-        setShowSuccessMessage(true)
-        
-        loadUserProgress()
-        
-      } catch (error) {
-        console.error('Failed to log partial work:', error)
-        // Revert optimistic update
-        setPlants(prevPlants => 
-          prevPlants.map(plant => 
-            plant.id === plantId ? { ...plant, shouldGlow: false } : plant
-          )
-        )
-        setSubmissionMessage('Failed to log progress. Please try again.')
-        setShowSuccessMessage(true)
-      }
-    })
+      )
+      setSubmissionMessage('Failed to log progress. Please try again.')
+      setShowSuccessMessage(true)
+    }
   }
 
   const convertToMultiStep = async (plantId: string, steps: Array<{title: string, description?: string}>) => {
-    await trackOperation('Convert to Multi-Step', async () => {
-      try {
-        // Optimistic update
-        setPlants(prevPlants => 
-          prevPlants.map(plant => 
-            plant.id === plantId 
-              ? { 
-                  ...plant, 
-                  is_multi_step: true,
-                  task_steps: steps.map((step, index) => ({
-                    id: `temp-${index}`,
-                    title: step.title,
-                    description: step.description || '',
-                    is_completed: false,
-                    is_partial: false,
-                    work_hours: 0
-                  })),
-                  total_steps: steps.length,
-                  completed_steps: 0,
-                  shouldGlow: true
-                }
-              : plant
-          )
+    try {
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId 
+            ? { 
+                ...plant, 
+                is_multi_step: true,
+                task_steps: steps.map((step, index) => ({
+                  id: `temp-${index}`,
+                  title: step.title,
+                  description: step.description || '',
+                  is_completed: false,
+                  is_partial: false,
+                  work_hours: 0
+                })),
+                total_steps: steps.length,
+                completed_steps: 0,
+                shouldGlow: true
+              }
+            : plant
         )
+      )
 
-        // API call
-        const result = await api.convertToMultiStep({
-          plant_id: plantId,
-          task_steps: steps
-        })
+      const result = await api.convertToMultiStep({
+        plant_id: plantId,
+        task_steps: steps
+      })
 
-        // Show success message
-        setSubmissionMessage(`Task converted! Now has ${result.total_steps} steps to complete.`)
-        setShowSuccessMessage(true)
-        sounds.playUI('success')
+      setSubmissionMessage(`Task converted! Now has ${result.total_steps} steps to complete.`)
+      setShowSuccessMessage(true)
+      sounds.playUI('success')
 
-        // Remove glow and refresh data
-        setTimeout(() => {
-          setPlants(prevPlants => 
-            prevPlants.map(plant => 
-              plant.id === plantId ? { ...plant, shouldGlow: false } : plant
-            )
-          )
-          loadPlants() // Refresh with server data
-        }, 1000)
-
-      } catch (error) {
-        console.error('Failed to convert to multi-step:', error)
-        
-        // Revert optimistic update
+      setTimeout(() => {
         setPlants(prevPlants => 
           prevPlants.map(plant => 
             plant.id === plantId ? { ...plant, shouldGlow: false } : plant
           )
         )
-        
-        setSubmissionMessage('Failed to convert task. Please try again.')
-        setShowSuccessMessage(true)
-      }
-    })
+        loadPlants()
+      }, 1000)
+
+    } catch (error) {
+      console.error('Failed to convert to multi-step:', error)
+      
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId ? { ...plant, shouldGlow: false } : plant
+        )
+      )
+      
+      setSubmissionMessage('Failed to convert task. Please try again.')
+      setShowSuccessMessage(true)
+    }
   }
 
   const createPlant = async (plantData: { 
@@ -834,24 +813,38 @@ export default function CanvasGarden() {
     }, 3000)
   }
 
-  // Daily task panel logic - only show once per login session
-  const shouldShowDailyTasks = useCallback(() => {
+  // Daily task panel logic - show on every meaningful login session
+  const shouldShowDailyTasks = useCallback(async () => {
     if (!user) return false
     
     // Don't show if user manually closed it this session
     if (taskPanelClosedThisSession) return false
     
-    const today = new Date().toDateString()
-    
-    // Check if panel was already shown today
-    const shownToday = localStorage.getItem(`taskPanelShown_${today}`)
-    if (shownToday) return false
-    
     // Check if user has any active plants
     if (plants.length === 0) return false
     
-    // Simply show once per day on login - no time-based conditions
-    return true
+    // Check for daily decay - but show panel regardless of decay result
+    try {
+      const decayResult = await api.applyDailyDecay()
+      
+      // Only set decay info if there was actual decay applied or streak protection
+      if (decayResult.decay_applied && decayResult.decay_applied > 0) {
+        setDailyDecayInfo(decayResult)
+      } else if (decayResult.message && decayResult.message.includes('No decay applied due to streak protection')) {
+        setDailyDecayInfo(decayResult)
+      } else {
+        // No decay info to show, but still show the panel for daily task review
+        setDailyDecayInfo(null)
+      }
+      
+      // Always show panel for daily task review when user logs in
+      return true
+    } catch (error) {
+      console.error('Failed to check daily decay:', error)
+      // Still show panel even if decay check fails
+      setDailyDecayInfo(null)
+      return true
+    }
   }, [user, plants, taskPanelClosedThisSession])
 
 
@@ -880,17 +873,17 @@ export default function CanvasGarden() {
   useEffect(() => {
     // Only show task panel on actual login, not on refresh/reload
     if (user && plants.length > 0 && isNewLogin) {
-      const shouldShow = shouldShowDailyTasks()
-      
-      if (shouldShow) {
-        setShouldAutoShowTasks(true)
-        setShowTaskPanel(true)
-        setSelectedPlant(null)
+      const checkAndShowPanel = async () => {
+        const shouldShow = await shouldShowDailyTasks()
         
-        // Mark as shown in localStorage to prevent showing again today
-        const today = new Date().toDateString()
-        localStorage.setItem(`taskPanelShown_${today}`, 'true')
+        if (shouldShow) {
+          setShouldAutoShowTasks(true)
+          setShowTaskPanel(true)
+          setSelectedPlant(null)
+        }
       }
+      
+      checkAndShowPanel()
     }
   }, [user, plants, isNewLogin, shouldShowDailyTasks])
 
@@ -1086,6 +1079,7 @@ export default function CanvasGarden() {
         plants={plants}
         isOpen={showTaskPanel}
         shouldAutoShow={shouldAutoShowTasks}
+        dailyDecayInfo={dailyDecayInfo}
         onClose={() => {
           // Play modal close sound
           sounds.playUI('modal_close')
@@ -1096,6 +1090,9 @@ export default function CanvasGarden() {
           
           // Mark that user manually closed the panel this session
           setTaskPanelClosedThisSession(true)
+          
+          // Clear decay info after closing
+          setDailyDecayInfo(null)
         }}
         onLogWork={logWork}
         onCompleteTask={completeTask}

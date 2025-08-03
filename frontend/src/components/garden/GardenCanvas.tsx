@@ -215,12 +215,32 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
     ctx.restore()
   }, [])
 
+  const drawGoldenTrophyEffect = useCallback((ctx: CanvasRenderingContext2D, centerX: number, centerY: number) => {
+    ctx.save()
+    
+    // Simple golden radial gradient aura (smaller and no circle)
+    const glowRadius = CELL_SIZE * 0.6  // Reduced from 0.9 to 0.6
+    const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, glowRadius)
+    gradient.addColorStop(0, 'rgba(255, 215, 0, 0.7)')
+    gradient.addColorStop(0.3, 'rgba(255, 193, 7, 0.5)')
+    gradient.addColorStop(0.6, 'rgba(255, 171, 0, 0.2)')
+    gradient.addColorStop(0.8, 'rgba(255, 143, 0, 0.1)')
+    gradient.addColorStop(1, 'rgba(255, 215, 0, 0)')
+    
+    ctx.fillStyle = gradient
+    ctx.fillRect(centerX - glowRadius, centerY - glowRadius, glowRadius * 2, glowRadius * 2)
+    
+    ctx.restore()
+  }, [])
+
   const drawPlant = useCallback(async (ctx: CanvasRenderingContext2D, plant: Plant) => {
     const centerX = plant.x * CELL_SIZE + CELL_SIZE / 2
-    const centerY = plant.y * CELL_SIZE + CELL_SIZE / 2
+    const centerY = plant.y * CELL_SIZE + CELL_SIZE / 2 - 20 // Move plants up by 20px for better visual positioning
 
-    // Draw glow effect for glowing plants
-    if (plant.shouldGlow) {
+    // Draw glow effect for glowing plants or golden effect for completed plants
+    if (plant.task_status === 'completed') {
+      drawGoldenTrophyEffect(ctx, centerX, centerY)
+    } else if (plant.shouldGlow) {
       drawPlantGlowEffect(ctx, centerX, centerY)
     }
 
@@ -230,7 +250,10 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
         ctx.save()
         
         // Apply visual filters based on plant state
-        if (plant.shouldGlow) {
+        if (plant.task_status === 'completed') {
+          // Golden trophy effect for completed plants
+          ctx.filter = 'contrast(1.3) saturate(1.6) brightness(1.2) hue-rotate(45deg) drop-shadow(0 0 15px rgba(255, 215, 0, 0.9))'
+        } else if (plant.shouldGlow) {
           ctx.filter = 'contrast(1.4) saturate(1.4) brightness(1.3) drop-shadow(0 0 10px rgba(255, 215, 0, 0.8))'
         } else if (plant.decay_status === 'wilted') {
           ctx.filter = 'contrast(0.8) saturate(0.6) brightness(0.9) sepia(0.3)'
@@ -242,7 +265,7 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
           ctx.filter = 'contrast(1.3) saturate(1.2) brightness(1.1)'
         }
         
-        const spriteSize = Math.min(CELL_SIZE - 8, 52)
+        const spriteSize = Math.min(CELL_SIZE - 4, 80) // Increased from 52 to 80 for bigger plants
         ctx.drawImage(
           spriteImg, 
           centerX - spriteSize / 2, 
@@ -256,21 +279,21 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
         // Fallback plant rendering
         ctx.fillStyle = getPlantColor(plant.type)
         ctx.beginPath()
-        ctx.arc(centerX, centerY, 16 + (plant.animationStage || plant.stage) * 4, 0, 2 * Math.PI)
+        ctx.arc(centerX, centerY, 24 + (plant.animationStage || plant.stage) * 6, 0, 2 * Math.PI) // Increased from 16+stage*4 to 24+stage*6
         ctx.fill()
       }
     } catch {
       // Fallback plant rendering
       ctx.fillStyle = getPlantColor(plant.type)
       ctx.beginPath()
-      ctx.arc(centerX, centerY, 16 + (plant.animationStage || plant.stage) * 4, 0, 2 * Math.PI)
+      ctx.arc(centerX, centerY, 24 + (plant.animationStage || plant.stage) * 6, 0, 2 * Math.PI) // Increased from 16+stage*4 to 24+stage*6
       ctx.fill()
     }
 
     // Plant category indicator
     ctx.fillStyle = getPlantColor(plant.type)
     ctx.fillRect(plant.x * CELL_SIZE + 2, plant.y * CELL_SIZE + 2, 8, 8)
-  }, [getPlantSpriteImage, drawPlantGlowEffect])
+  }, [getPlantSpriteImage, drawPlantGlowEffect, drawGoldenTrophyEffect])
 
   const drawPlantOverlays = useCallback((ctx: CanvasRenderingContext2D) => {
     plants.forEach(plant => {

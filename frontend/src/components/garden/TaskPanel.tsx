@@ -16,6 +16,14 @@ interface TaskPanelProps {
   onSuccess: (message: string) => void
   focusedPlantId: string | null
   onSetFocusedPlant: (plantId: string | null) => void
+  dailyDecayInfo?: {
+    decay_applied?: number;
+    level?: number;
+    streak?: number;
+    base_decay?: number;
+    streak_protection?: number;
+    message?: string;
+  } | null
 }
 
 export const TaskPanel: React.FC<TaskPanelProps> = ({
@@ -28,7 +36,8 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   onCreateNew,
   onSuccess,
   focusedPlantId,
-  onSetFocusedPlant
+  onSetFocusedPlant,
+  dailyDecayInfo
 }) => {
   const sounds = useSounds()
   
@@ -66,6 +75,45 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
               </>
             )}
           </div>
+
+          {/* Daily Decay Notification - Only show if there was decay */}
+          {dailyDecayInfo && dailyDecayInfo.decay_applied && dailyDecayInfo.decay_applied > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-4 p-3 bg-orange-500/20 border border-orange-400/30 rounded-lg"
+            >
+              <div className="flex items-center justify-center gap-2 text-orange-200">
+                <span className="text-orange-400">⚠️</span>
+                <span className="font-medium">Daily XP Decay Applied</span>
+              </div>
+              <div className="text-center text-sm text-orange-300 mt-1">
+                Lost {dailyDecayInfo.decay_applied} XP (Base: {dailyDecayInfo.base_decay}, Protected: {dailyDecayInfo.streak_protection})
+              </div>
+              {dailyDecayInfo.streak && dailyDecayInfo.streak > 0 && (
+                <div className="text-center text-xs text-green-300 mt-1">
+                  Your {dailyDecayInfo.streak}-day streak protected you from losing more XP!
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Streak Protection Message - Only show if no decay due to streak */}
+          {dailyDecayInfo && dailyDecayInfo.message && dailyDecayInfo.message.includes('No decay applied due to streak protection') && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-4 p-3 bg-green-500/20 border border-green-400/30 rounded-lg"
+            >
+              <div className="flex items-center justify-center gap-2 text-green-200">
+                <span className="text-green-400">🛡️</span>
+                <span className="font-medium">Streak Protection Active!</span>
+              </div>
+              <div className="text-center text-sm text-green-300 mt-1">
+                Your {dailyDecayInfo.streak}-day streak fully protected you from XP decay
+              </div>
+            </motion.div>
+          )}
         </div>
 
         {/* Fixed Stats Section */}

@@ -93,7 +93,6 @@ export class SoundManager {
   }
 
   private createProceduralSounds() {
-    // UI Sounds
     this.createAdvancedSound('ui_click', {
       type: 'crystal_click',
       frequency: 600,
@@ -189,7 +188,6 @@ export class SoundManager {
       volume: 0.4
     })
 
-    // Plant Sounds
     this.createAdvancedSound('plant_click', {
       type: 'leaf_rustle',
       frequency: 180,
@@ -209,21 +207,21 @@ export class SoundManager {
       frequency: 110,
       endFrequency: 440,
       duration: 1.8,
-      volume: 0.6
+      volume: 0.3
     })
     
     this.createAdvancedSound('plant_stage_up', {
       type: 'nature_symphony',
-      frequencies: [146.83, 220.00, 293.66, 440.00, 659.25],
+      frequencies: [146.83, 220.00, 293.66, 440.00, 523.25],
       duration: 2.5,
-      volume: 0.7
+      volume: 0.4
     })
     
     this.createAdvancedSound('plant_harvest', {
       type: 'harvest_chime',
       frequencies: [261.63, 329.63, 392.00, 523.25],
       duration: 1.2,
-      volume: 0.6
+      volume: 0.5
     })
     
     this.createAdvancedSound('plant_wilt', {
@@ -241,7 +239,6 @@ export class SoundManager {
       volume: 0.55
     })
 
-    // Task & Achievement Sounds
     this.createAdvancedSound('task_complete', {
       type: 'victory_chord',
       frequencies: [261.63, 329.63, 392.00, 523.25],
@@ -266,7 +263,7 @@ export class SoundManager {
     
     this.createAdvancedSound('xp_gain', {
       type: 'crystal_sparkle',
-      frequency: 1760,
+      frequency: 880,
       duration: 0.4,
       volume: 0.45
     })
@@ -275,21 +272,28 @@ export class SoundManager {
       type: 'grand_fanfare',
       frequencies: [130.81, 261.63, 329.63, 392.00, 523.25, 659.25, 783.99],
       duration: 3.0,
-      volume: 0.8
+      volume: 0.35
     })
     
     this.createAdvancedSound('level_up', {
       type: 'ascension_theme',
       frequencies: [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25],
       duration: 2.0,
-      volume: 0.75
+      volume: 0.55
     })
     
     this.createAdvancedSound('streak_milestone', {
       type: 'cosmic_celebration',
-      frequencies: [65.41, 130.81, 261.63, 523.25, 1046.50],
+      frequencies: [65.41, 130.81, 261.63, 523.25, 783.99],
       duration: 3.5,
-      volume: 0.85
+      volume: 0.65
+    })
+    
+    this.createAdvancedSound('golden_chime', {
+      type: 'golden_harmony',
+      frequencies: [261.63, 329.63, 392.00, 523.25, 659.25],
+      duration: 2.0,
+      volume: 0.55
     })
   }
 
@@ -301,7 +305,6 @@ export class SoundManager {
         }
         
         switch (config.type) {
-          // UI Sounds
           case 'crystal_click':
             this.uiSounds?.createCrystalClick(config)
             break
@@ -335,7 +338,6 @@ export class SoundManager {
             this.uiSounds?.createGentleChime(config)
             break
           
-          // Plant Sounds
           case 'leaf_rustle':
             this.plantSounds?.createLeafRustle(config)
             break
@@ -358,7 +360,6 @@ export class SoundManager {
             this.plantSounds?.createOrganicBloom(config)
             break
           
-          // Achievement Sounds
           case 'victory_chord':
             this.achievementSounds?.createVictoryChord(config)
             break
@@ -379,6 +380,9 @@ export class SoundManager {
             break
           case 'cosmic_celebration':
             this.achievementSounds?.createGrandFanfare(config)
+            break
+          case 'golden_harmony':
+            this.achievementSounds?.createTriumphBells(config)
             break
           
           default:
@@ -445,7 +449,6 @@ export class SoundManager {
     }))
   }
 
-  // Public API methods
   play(type: SoundType) {
     if (!this.isEnabled || !this.isSoundEffectsEnabled) return
     
@@ -468,7 +471,7 @@ export class SoundManager {
   }
 
   async startBackgroundMusic() {
-    if (!this.isEnabled || !this.isBackgroundMusicEnabled) {
+    if (!this.isEnabled || !this.isBackgroundMusicEnabled || this.masterVolume === 0) {
       return
     }
 
@@ -485,7 +488,6 @@ export class SoundManager {
     if (!music.playing()) {
       music.volume(this.backgroundMusicVolume * this.masterVolume)
       
-      // Apply audio variations if enabled
       if (this.audioVariationsEnabled) {
         const randomRate = 0.8 + Math.random() * 0.4
         music.rate(randomRate)
@@ -501,7 +503,6 @@ export class SoundManager {
           }
         })
 
-        // Set up loop variation timer if variations are enabled
         if (this.audioVariationsEnabled) {
           this.setupAudioVariationTimer(music)
         }
@@ -512,9 +513,8 @@ export class SoundManager {
   }
 
   private setupAudioVariationTimer(music: Howl) {
-    // Apply noticeable variations every 20-45 seconds during playback
     const variationInterval = setInterval(() => {
-      if (!music.playing() || !this.audioVariationsEnabled || !this.isBackgroundMusicEnabled) {
+      if (!music.playing() || !this.audioVariationsEnabled || !this.isBackgroundMusicEnabled || this.masterVolume === 0) {
         clearInterval(variationInterval)
         return
       }
@@ -537,16 +537,23 @@ export class SoundManager {
   }
 
   setMasterVolume(volume: number) {
+    const previousVolume = this.masterVolume
     this.masterVolume = Math.max(0, Math.min(1, volume))
     localStorage.setItem('taskgarden_master_volume', this.masterVolume.toString())
     
-    // Update background music volume immediately
-    const music = this.sounds.get('background_music')
-    if (music) {
-      music.volume(this.backgroundMusicVolume * this.masterVolume)
+    if (this.masterVolume === 0) {
+      this.stopBackgroundMusic()
+    }
+    else if (previousVolume === 0 && this.masterVolume > 0) {
+      this.startBackgroundMusic()
+    }
+    else {
+      const music = this.sounds.get('background_music')
+      if (music && music.playing()) {
+        music.volume(this.backgroundMusicVolume * this.masterVolume)
+      }
     }
     
-    // Update generator volumes
     if (this.uiSounds && this.audioContext) {
       this.uiSounds = new UISoundGenerator(this.audioContext, this.masterVolume)
     }
@@ -582,7 +589,6 @@ export class SoundManager {
   }
 
   playXPGainSequence(xpAmount: number) {
-    // XP gain sound sequence - can be enhanced based on amount
     this.playAchievement('xp_gain')
     
     if (xpAmount > 50) {
@@ -599,13 +605,11 @@ export class SoundManager {
     setTimeout(() => this.playPlant('grow'), 500)
     setTimeout(() => this.playAchievement('xp_gain'), 1000)
     
-    // Play additional sounds for higher stages
     if (stage && stage >= 3) {
       setTimeout(() => this.playPlant('stage_up'), 1200)
     }
   }
 
-  // Enhanced audio control methods
   getBackgroundMusicVolume(): number {
     return this.backgroundMusicVolume
   }

@@ -36,7 +36,9 @@ export const WorkDialog: React.FC<WorkDialogProps> = ({
   const handleStepComplete = async (stepId: string) => {
     if (!plant || !onCompleteStep) return
     
+    // Only pass hours if user actually entered some, otherwise undefined (step completion without time tracking)
     const hours = workHours && parseFloat(workHours) > 0 ? parseFloat(workHours) : undefined
+    
     await onCompleteStep(plant.id, stepId, hours)
     setWorkHours('')
     onClose()
@@ -183,11 +185,14 @@ export const WorkDialog: React.FC<WorkDialogProps> = ({
               </div>
             )}
 
-            <label className="block text-sm font-medium text-purple-200 mb-3">
-              {selectedStepAction === 'complete' ? 'Which step did you complete?' : 'Which step did you work on?'}
+            <label className="block text-sm font-medium text-purple-200 mb-3 leading-relaxed">
+              {selectedStepAction === 'complete' 
+                ? 'Which step did you complete?' 
+                : 'Which step did you work on?'
+              }
             </label>
             
-            <div className="space-y-2 max-h-40 overflow-y-auto">
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
               {incompletedSteps.map((step, index) => (
                 <motion.button
                   key={step.id || index}
@@ -195,9 +200,20 @@ export const WorkDialog: React.FC<WorkDialogProps> = ({
                   whileTap={{ scale: 0.98 }}
                   onClick={() => {
                     if (selectedStepAction === 'complete') {
-                      handleStepComplete(step.id || `step-${index}`)
+                      // Only use step.id if it exists and is not a fallback ID
+                      const stepId = step.id && step.id !== `step-${index}` ? step.id : null
+                      if (!stepId) {
+                        alert('This step is missing a valid ID. Please recreate the task.')
+                        return
+                      }
+                      handleStepComplete(stepId)
                     } else {
-                      handleStepPartial(step.id || `step-${index}`)
+                      const stepId = step.id && step.id !== `step-${index}` ? step.id : null
+                      if (!stepId) {
+                        alert('This step is missing a valid ID. Please recreate the task.')
+                        return
+                      }
+                      handleStepPartial(stepId)
                     }
                   }}
                   disabled={selectedStepAction === 'partial' && (!workHours || parseFloat(workHours) <= 0)}

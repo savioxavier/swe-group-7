@@ -27,6 +27,7 @@ export type SoundType =
   | 'level_up'
   | 'plant_create'
   | 'background_music'
+  | 'golden_chime'
 
 export interface AdvancedSoundConfig {
   type: string

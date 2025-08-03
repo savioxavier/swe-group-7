@@ -149,13 +149,17 @@ async def get_user_progress(credentials: HTTPAuthorizationCredentials = Depends(
         
         progress = progress_result.data[0]
         
+        # Check what's stored vs calculated
+        stored_level = progress.get("level", 0)
+        stored_total_xp = progress["total_experience"]
+        
         # Calculate level breakdown
-        level, current_level_xp, xp_to_next = XPService.calculate_level_from_xp(progress["total_experience"])
+        level, current_level_xp, xp_to_next = XPService.calculate_level_from_xp(stored_total_xp)
         
         return {
             "user_id": user_id,
-            "total_experience": progress["total_experience"],
-            "level": level,
+            "total_experience": stored_total_xp,
+            "level": level,  # Return calculated level instead of stored level
             "current_level_experience": current_level_xp,
             "experience_to_next_level": xp_to_next,
             "current_streak": progress.get("current_streak", 0),

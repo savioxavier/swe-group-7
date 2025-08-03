@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
 import { Trophy, Sparkles, Award, TrendingUp, X, Dumbbell, BookOpen, Briefcase, Palette, Target } from 'lucide-react'
 import type { Plant } from './constants'
+import { useSounds } from '../../lib/sounds'
 
 interface TrophyDialogProps {
   plant: Plant | null
@@ -17,9 +18,21 @@ export const TrophyDialog: React.FC<TrophyDialogProps> = ({
   onClose,
   onCompleteTask
 }) => {
+  const sounds = useSounds()
+  
+  // Play golden chime when dialog opens
+  useEffect(() => {
+    if (isOpen && plant) {
+      sounds.play('golden_chime')
+    }
+  }, [isOpen, plant, sounds])
+  
   if (!isOpen || !plant) return null
 
   const handleAcknowledge = async () => {
+    // Play close/success sound effect
+    sounds.play('plant_harvest')
+    
     onClose()
     
     if (onCompleteTask && plant.id && plant.task_status !== 'completed') {
@@ -32,6 +45,9 @@ export const TrophyDialog: React.FC<TrophyDialogProps> = ({
   }
 
   const handleClose = async () => {
+    // Play close sound effect
+    sounds.play('ui_modal_close')
+    
     onClose()
     
     if (onCompleteTask && plant.id && plant.task_status !== 'completed') {

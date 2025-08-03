@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { api } from '../lib/api'
-import { User, LoginData, RegisterData } from '../types'
+import type { User, LoginData, RegisterData } from '../types'
 
 interface AuthContextType {
   user: User | null
@@ -121,9 +121,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       localStorage.removeItem('tokenExpiry')
-      localStorage.removeItem('lastDailyPanelDate')
-      const today = new Date().toDateString()
-      localStorage.removeItem(`taskPanelSkipped_${today}`)
     } catch (error) {
       console.error('Error during logout:', error)
       setToken(null)
@@ -131,9 +128,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       localStorage.removeItem('tokenExpiry')
-      localStorage.removeItem('lastDailyPanelDate')
-      const today = new Date().toDateString()
-      localStorage.removeItem(`taskPanelSkipped_${today}`)
     }
   }
 

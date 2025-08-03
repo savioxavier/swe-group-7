@@ -1,7 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-import { LoginData, RegisterData, AuthResponse, RegistrationResponse, PlantCreate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse, AdminUser, SystemStats } from '../types'
-import type { TaskStepComplete, TaskStepPartial, PlantConvertToMultiStep } from '../types'
+import type { LoginData, RegisterData, AuthResponse, RegistrationResponse, PlantCreate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse, AdminUser, SystemStats, TaskStepComplete, TaskStepPartial, PlantConvertToMultiStep } from '../types'
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -34,7 +33,7 @@ async function apiRequest<T>(
     if (response.status === 422) {
       const errorMessage = error.detail ? 
         (Array.isArray(error.detail) ? 
-          error.detail.map(e => `Field '${e.loc?.join('.')}': ${e.msg}`).join(', ') : 
+          error.detail.map((e: { loc?: string[]; msg: string }) => `Field '${e.loc?.join('.')}': ${e.msg}`).join(', ') : 
           error.detail) : 
         'Validation failed'
       throw new ApiError(response.status, errorMessage)
@@ -46,7 +45,7 @@ async function apiRequest<T>(
   return response.json()
 }
 
-function getAuthHeaders() {
+function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem('token')
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
@@ -167,6 +166,17 @@ export const api = {
 
   async getTodaysWorkLogs(): Promise<TaskWorkResponse[]> {
     return this.get<TaskWorkResponse[]>('/plants/work/today')
+  },
+
+  async applyDailyDecay(): Promise<{
+    decay_applied?: number;
+    level?: number;
+    streak?: number;
+    base_decay?: number;
+    streak_protection?: number;
+    message?: string;
+  }> {
+    return this.post('/users/apply-daily-decay')
   },
 
   async completeTask(plantId: string): Promise<{message: string}> {
