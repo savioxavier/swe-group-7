@@ -43,8 +43,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   const sounds = useSounds()
   const [showCalendarModal, setShowCalendarModal] = useState(false)
   const [selectedDate, setSelectedDate] = useState('')
-  const [selectedTime, setSelectedTime] = useState('')
-  const [selectedDuration, setSelectedDuration] = useState(2) // Default 2 hours
+  const [taskExportSettings, setTaskExportSettings] = useState<{[key: string]: {time: string, duration: number, enabled: boolean}}>({})
   const [debugMode, setDebugMode] = useState(DailyWorkService.isDebugModeEnabled())
   const [showDebugPanel, setShowDebugPanel] = useState(false)
   
@@ -69,21 +68,39 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
     const tomorrow = new Date()
     tomorrow.setDate(tomorrow.getDate() + 1)
     setSelectedDate(tomorrow.toISOString().split('T')[0])
-    setSelectedTime('09:00') // Default to 9 AM
-    setSelectedDuration(2) // Default 2 hours
 
-    // Open the modal to select date and time
+    // Open the modal to select date and tasks
     setShowCalendarModal(true)
     sounds.playUI('button')
   }
 
   const handleCalendarExportSubmit = async () => {
-    if (!selectedDate || !selectedTime) {
-      onSuccess("Please select both date and time!")
+    if (!selectedDate) {
+      onSuccess("Please select a date!")
       return
     }
 
     const activeTasks = plants.filter(p => p.task_status === 'active')
+    
+    // Get enabled tasks from settings
+    const enabledTasks = activeTasks.filter(plant => 
+      taskExportSettings[plant.id]?.enabled
+    )
+
+    if (enabledTasks.length === 0) {
+      onSuccess("Please select at least one task to export.")
+      return
+    }
+
+    // Check if all enabled tasks have time set
+    const missingTime = enabledTasks.some(plant => 
+      !taskExportSettings[plant.id]?.time
+    )
+    
+    if (missingTime) {
+      onSuccess("Please set time for all selected tasks!")
+      return
+    }
     
     try {
       // Show loading message
@@ -92,21 +109,37 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
       // Initialize Google Calendar API
       const initialized = await GoogleCalendarAPI.initialize()
       if (!initialized) {
-        onSuccess("Failed to connect to Google Calendar. Please check your configuration.")
+        onSuccess("❌ Failed to initialize Google Calendar API. Check console for details and ensure your API keys are set correctly.")
         return
+      }
+
+      // Check if user is signed in, and sign them in if not
+      const isSignedIn = await GoogleCalendarAPI.isSignedIn()
+      if (!isSignedIn) {
+        onSuccess("📝 Please sign in to Google Calendar...")
+        const signInSuccess = await GoogleCalendarAPI.signIn()
+        if (!signInSuccess) {
+          onSuccess("❌ Failed to sign in to Google Calendar. Make sure pop-ups are allowed and your OAuth settings are correct.")
+          return
+        }
+        onSuccess("✅ Signed in to Google Calendar! Exporting tasks...")
       }
 
       let exportedCount = 0
       let failedCount = 0
 
-      // Export each active task to Google Calendar
-      for (const plant of activeTasks) {
+      // Export each enabled task to Google Calendar
+      for (const plant of enabledTasks) {
+        const settings = taskExportSettings[plant.id]
+        if (!settings) continue
+
         const success = await GoogleCalendarAPI.exportTaskToCalendar(
           plant.name,
+          plant.type || 'general',
           plant.task_description || plant.name,
           selectedDate,
-          selectedTime,
-          selectedDuration
+          settings.time,
+          settings.duration
         )
 
         if (success) {
@@ -117,15 +150,15 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
             taskName: plant.name,
             taskDescription: plant.task_description || plant.name,
             selectedDate,
-            selectedTime,
-            duration: selectedDuration
+            selectedTime: settings.time,
+            duration: settings.duration
           })
         } else {
           failedCount++
         }
 
         // Small delay between exports to avoid rate limiting
-        if (plant !== activeTasks[activeTasks.length - 1]) {
+        if (plant !== enabledTasks[enabledTasks.length - 1]) {
           await new Promise(resolve => setTimeout(resolve, 500))
         }
       }
@@ -133,8 +166,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
       // Close modal and reset form
       setShowCalendarModal(false)
       setSelectedDate('')
-      setSelectedTime('')
-      setSelectedDuration(2)
+      setTaskExportSettings({})
       
       // Show results
       if (exportedCount > 0 && failedCount === 0) {
@@ -156,9 +188,44 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   const handleCloseCalendarModal = () => {
     setShowCalendarModal(false)
     setSelectedDate('')
-    setSelectedTime('')
-    setSelectedDuration(2)
+    setTaskExportSettings({})
     sounds.playUI('modal_close')
+  }
+
+  const handleTaskToggle = (plantId: string, enabled: boolean) => {
+    setTaskExportSettings(prev => ({
+      ...prev,
+      [plantId]: {
+        ...prev[plantId],
+        enabled,
+        time: prev[plantId]?.time || '09:00',
+        duration: prev[plantId]?.duration || 2
+      }
+    }))
+  }
+
+  const handleTaskTimeChange = (plantId: string, time: string) => {
+    setTaskExportSettings(prev => ({
+      ...prev,
+      [plantId]: {
+        ...prev[plantId],
+        time,
+        enabled: prev[plantId]?.enabled || false,
+        duration: prev[plantId]?.duration || 2
+      }
+    }))
+  }
+
+  const handleTaskDurationChange = (plantId: string, duration: number) => {
+    setTaskExportSettings(prev => ({
+      ...prev,
+      [plantId]: {
+        ...prev[plantId],
+        duration,
+        enabled: prev[plantId]?.enabled || false,
+        time: prev[plantId]?.time || '09:00'
+      }
+    }))
   }
 
   const handleWorkSubmit = async (plantId: string, hours: number) => {
@@ -544,13 +611,6 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
               </button>
             </div>
 
-            {/* Show how many tasks will be exported */}
-            <div className="mb-4 p-3 bg-blue-500/20 rounded-lg border border-blue-400/30">
-              <p className="text-blue-200 text-sm">
-                {plants.filter(p => p.task_status === 'active').length} active task(s) will be exported
-              </p>
-            </div>
-
             <div className="space-y-4">
               <div>
                 <label className="block text-white/90 text-sm font-medium mb-2">
@@ -570,41 +630,70 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
               </div>
 
               <div>
-                <label className="block text-white/90 text-sm font-medium mb-2">
-                  Select Time
+                <label className="block text-white/90 text-sm font-medium mb-3">
+                  Select Tasks to Export
                 </label>
-                <input
-                  type="time"
-                  value={selectedTime}
-                  onChange={(e) => {
-                    e.stopPropagation()
-                    setSelectedTime(e.target.value)
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400"
-                />
-              </div>
-
-              <div>
-                <label className="block text-white/90 text-sm font-medium mb-2">
-                  Duration (hours)
-                </label>
-                <select
-                  value={selectedDuration}
-                  onChange={(e) => {
-                    e.stopPropagation()
-                    setSelectedDuration(Number(e.target.value))
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-400"
-                >
-                  <option value={0.5} className="bg-green-800 text-white">30 minutes</option>
-                  <option value={1} className="bg-green-800 text-white">1 hour</option>
-                  <option value={1.5} className="bg-green-800 text-white">1.5 hours</option>
-                  <option value={2} className="bg-green-800 text-white">2 hours</option>
-                  <option value={3} className="bg-green-800 text-white">3 hours</option>
-                  <option value={4} className="bg-green-800 text-white">4 hours</option>
-                </select>
+                <div className="space-y-3 max-h-60 overflow-y-auto">
+                  {plants.filter(p => p.task_status === 'active').map((plant) => {
+                    const settings = taskExportSettings[plant.id] || { enabled: false, time: '09:00', duration: 2 }
+                    return (
+                      <div key={plant.id} className="p-3 bg-white/5 rounded-lg border border-white/10">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settings.enabled}
+                              onChange={(e) => {
+                                e.stopPropagation()
+                                handleTaskToggle(plant.id, e.target.checked)
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-4 h-4 rounded border-white/20 bg-white/10 text-green-500 focus:ring-green-400 focus:ring-2"
+                            />
+                            <span className="text-white font-medium truncate">{plant.name}</span>
+                          </label>
+                        </div>
+                        
+                        {settings.enabled && (
+                          <div className="flex gap-2 mt-2">
+                            <div className="flex-1">
+                              <label className="block text-white/70 text-xs mb-1">Time</label>
+                              <input
+                                type="time"
+                                value={settings.time}
+                                onChange={(e) => {
+                                  e.stopPropagation()
+                                  handleTaskTimeChange(plant.id, e.target.value)
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-green-400"
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <label className="block text-white/70 text-xs mb-1">Duration</label>
+                              <select
+                                value={settings.duration}
+                                onChange={(e) => {
+                                  e.stopPropagation()
+                                  handleTaskDurationChange(plant.id, Number(e.target.value))
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-white text-sm focus:outline-none focus:ring-1 focus:ring-green-400"
+                              >
+                                <option value={0.5} className="bg-green-800 text-white">30m</option>
+                                <option value={1} className="bg-green-800 text-white">1h</option>
+                                <option value={1.5} className="bg-green-800 text-white">1.5h</option>
+                                <option value={2} className="bg-green-800 text-white">2h</option>
+                                <option value={3} className="bg-green-800 text-white">3h</option>
+                                <option value={4} className="bg-green-800 text-white">4h</option>
+                              </select>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
 
               <div className="flex gap-3 pt-4">
@@ -623,8 +712,9 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
                     handleCalendarExportSubmit()
                   }}
                   className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+                  disabled={!Object.values(taskExportSettings).some(s => s.enabled)}
                 >
-                  Export to Google Calendar
+                  Export Selected
                 </button>
               </div>
             </div>

@@ -20,29 +20,59 @@ interface GoogleCalendarConfig {
 
 class GoogleCalendarAPI {
   private static config: GoogleCalendarConfig = {
-    apiKey: process.env.REACT_APP_GOOGLE_API_KEY || '',
-    clientId: process.env.REACT_APP_GOOGLE_CLIENT_ID || '',
+    apiKey: import.meta.env.VITE_GOOGLE_API_KEY || '',
+    clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
     discoveryDoc: 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest',
     scopes: ['https://www.googleapis.com/auth/calendar.events']
   }
 
   private static gapi: any = null
+  private static google: any = null
   private static isInitialized = false
+  private static accessToken: string | null = null
+
+  private static validateConfig(): boolean {
+    if (!this.config.apiKey) {
+      console.error('VITE_GOOGLE_API_KEY is not set in environment variables')
+      return false
+    }
+    if (!this.config.clientId) {
+      console.error('VITE_GOOGLE_CLIENT_ID is not set in environment variables')
+      return false
+    }
+    return true
+  }
 
   static async initialize(): Promise<boolean> {
     try {
       if (this.isInitialized) return true
 
-      // Load Google API script
-      await this.loadGoogleAPI()
+      console.log('Initializing Google Calendar API...')
+
+      if (!this.validateConfig()) {
+        return false
+      }
+
+      // Load both Google API scripts
+      await Promise.all([
+        this.loadGoogleAPI(),
+        this.loadGoogleIdentity()
+      ])
       
-      // Initialize the Google API client
-      await this.gapi.load('client:auth2', async () => {
-        await this.gapi.client.init({
-          apiKey: this.config.apiKey,
-          clientId: this.config.clientId,
-          discoveryDocs: [this.config.discoveryDoc],
-          scope: this.config.scopes.join(' ')
+      // Initialize the Google API client (without auth2)
+      await new Promise<void>((resolve, reject) => {
+        this.gapi.load('client', async () => {
+          try {
+            await this.gapi.client.init({
+              apiKey: this.config.apiKey,
+              discoveryDocs: [this.config.discoveryDoc]
+            })
+            console.log('Google API client initialized successfully')
+            resolve()
+          } catch (error) {
+            console.error('Failed to initialize Google API client:', error)
+            reject(error)
+          }
         })
       })
 
@@ -73,17 +103,58 @@ class GoogleCalendarAPI {
     })
   }
 
-  static async signIn(): Promise<boolean> {
-    try {
-      if (!this.isInitialized) {
-        const initialized = await this.initialize()
-        if (!initialized) return false
+  private static loadGoogleIdentity(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (window.google) {
+        this.google = window.google
+        resolve()
+        return
       }
 
-      const authInstance = this.gapi.auth2.getAuthInstance()
-      const user = await authInstance.signIn()
+      const script = document.createElement('script')
+      script.src = 'https://accounts.google.com/gsi/client'
+      script.onload = () => {
+        this.google = window.google
+        resolve()
+      }
+      script.onerror = reject
+      document.head.appendChild(script)
+    })
+  }
+
+  static async signIn(): Promise<boolean> {
+    try {
+      console.log('Attempting to sign in to Google...')
       
-      return user.isSignedIn()
+      if (!this.isInitialized) {
+        console.log('API not initialized, initializing now...')
+        const initialized = await this.initialize()
+        if (!initialized) {
+          console.error('Failed to initialize Google API')
+          return false
+        }
+      }
+
+      return new Promise((resolve) => {
+        const tokenClient = this.google.accounts.oauth2.initTokenClient({
+          client_id: this.config.clientId,
+          scope: this.config.scopes.join(' '),
+          callback: (tokenResponse: any) => {
+            if (tokenResponse.error) {
+              console.error('Token request failed:', tokenResponse.error)
+              resolve(false)
+              return
+            }
+            
+            this.accessToken = tokenResponse.access_token
+            console.log('Sign-in successful, token received')
+            resolve(true)
+          }
+        })
+
+        console.log('Requesting access token...')
+        tokenClient.requestAccessToken()
+      })
     } catch (error) {
       console.error('Failed to sign in to Google:', error)
       return false
@@ -91,15 +162,7 @@ class GoogleCalendarAPI {
   }
 
   static async isSignedIn(): Promise<boolean> {
-    try {
-      if (!this.isInitialized) return false
-      
-      const authInstance = this.gapi.auth2.getAuthInstance()
-      return authInstance.isSignedIn.get()
-    } catch (error) {
-      console.error('Failed to check sign-in status:', error)
-      return false
-    }
+    return !!this.accessToken
   }
 
   static async createEvent(event: GoogleCalendarEvent): Promise<boolean> {
@@ -111,13 +174,21 @@ class GoogleCalendarAPI {
         }
       }
 
-      const request = {
-        calendarId: 'primary',
-        resource: event
+      const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(event)
+      })
+
+      if (!response.ok) {
+        throw new Error(`Calendar API error: ${response.status} ${response.statusText}`)
       }
 
-      const response = await this.gapi.client.calendar.events.insert(request)
-      console.log('Event created:', response.result)
+      const result = await response.json()
+      console.log('Event created:', result)
       return true
     } catch (error) {
       console.error('Failed to create calendar event:', error)
@@ -127,6 +198,7 @@ class GoogleCalendarAPI {
 
   static async exportTaskToCalendar(
     taskName: string,
+    taskCategory: string,
     taskDescription: string,
     selectedDate: string,
     selectedTime: string,
@@ -138,8 +210,8 @@ class GoogleCalendarAPI {
       const endDateTime = new Date(startDateTime.getTime() + (duration * 60 * 60 * 1000))
 
       const event: GoogleCalendarEvent = {
-        summary: `${taskName} - ${taskDescription}`,
-        description: `Task: ${taskName}\nDescription: ${taskDescription}\nDuration: ${duration} hour(s)\n\nCreated from Task Garden`,
+        summary: `${taskName} - ${taskCategory}`,
+        description: taskDescription,
         start: {
           dateTime: startDateTime.toISOString(),
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -159,6 +231,7 @@ class GoogleCalendarAPI {
 
   static async exportMultipleTasks(tasks: Array<{
     taskName: string
+    taskCategory: string
     taskDescription: string
     selectedDate: string
     selectedTime: string
@@ -170,6 +243,7 @@ class GoogleCalendarAPI {
     for (const task of tasks) {
       const result = await this.exportTaskToCalendar(
         task.taskName,
+        task.taskCategory,
         task.taskDescription,
         task.selectedDate,
         task.selectedTime,
@@ -194,6 +268,7 @@ class GoogleCalendarAPI {
 declare global {
   interface Window {
     gapi: any
+    google: any
   }
 }
 
