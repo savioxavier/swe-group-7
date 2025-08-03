@@ -1,9 +1,12 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { motion } from 'framer-motion'
-import { Plus } from 'lucide-react'
+import { Calendar, X, Hammer } from 'lucide-react'
 import type { Plant } from './constants'
 import { useSounds } from '../../lib/sounds'
+import { CalendarExportService } from '../../lib/calendarExport'
+import { DailyWorkService } from '../../lib/dailyWork'
+import { GoogleCalendarAPI } from '../../lib/googleCalendar'
 
 interface TaskPanelProps {
   plants: Plant[]
@@ -12,7 +15,6 @@ interface TaskPanelProps {
   onClose: () => void
   onLogWork: (plantId: string, hours: number) => Promise<void>
   onCompleteTask: (plantId: string) => Promise<void>
-  onCreateNew: () => void
   onSuccess: (message: string) => void
   focusedPlantId: string | null
   onSetFocusedPlant: (plantId: string | null) => void
@@ -33,20 +35,162 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   onClose,
   onLogWork,
   onCompleteTask,
-  onCreateNew,
   onSuccess,
   focusedPlantId,
   onSetFocusedPlant,
   dailyDecayInfo
 }) => {
   const sounds = useSounds()
+  const [showCalendarModal, setShowCalendarModal] = useState(false)
+  const [selectedDate, setSelectedDate] = useState('')
+  const [selectedTime, setSelectedTime] = useState('')
+  const [selectedDuration, setSelectedDuration] = useState(2) // Default 2 hours
+  const [debugMode, setDebugMode] = useState(DailyWorkService.isDebugModeEnabled())
+  const [showDebugPanel, setShowDebugPanel] = useState(false)
+  
+  // Clean up old logs and sync debug mode on component mount
+  useEffect(() => {
+    DailyWorkService.clearOldLogs()
+    setDebugMode(DailyWorkService.isDebugModeEnabled())
+  }, [])
   
   if (!isOpen) return null
 
+  const handleExportToGoogleCalendar = () => {
+    // Get active tasks to export
+    const activeTasks = plants.filter(p => p.task_status === 'active')
+    
+    if (activeTasks.length === 0) {
+      onSuccess("No active tasks to export!")
+      return
+    }
+
+    // Set default values when opening modal
+    const tomorrow = new Date()
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    setSelectedDate(tomorrow.toISOString().split('T')[0])
+    setSelectedTime('09:00') // Default to 9 AM
+    setSelectedDuration(2) // Default 2 hours
+
+    // Open the modal to select date and time
+    setShowCalendarModal(true)
+    sounds.playUI('button')
+  }
+
+  const handleCalendarExportSubmit = async () => {
+    if (!selectedDate || !selectedTime) {
+      onSuccess("Please select both date and time!")
+      return
+    }
+
+    const activeTasks = plants.filter(p => p.task_status === 'active')
+    
+    try {
+      // Show loading message
+      onSuccess("Connecting to Google Calendar...")
+
+      // Initialize Google Calendar API
+      const initialized = await GoogleCalendarAPI.initialize()
+      if (!initialized) {
+        onSuccess("Failed to connect to Google Calendar. Please check your configuration.")
+        return
+      }
+
+      let exportedCount = 0
+      let failedCount = 0
+
+      // Export each active task to Google Calendar
+      for (const plant of activeTasks) {
+        const success = await GoogleCalendarAPI.exportTaskToCalendar(
+          plant.name,
+          plant.task_description || plant.name,
+          selectedDate,
+          selectedTime,
+          selectedDuration
+        )
+
+        if (success) {
+          exportedCount++
+          // Also save to local storage for backup
+          CalendarExportService.saveExport({
+            taskId: plant.id,
+            taskName: plant.name,
+            taskDescription: plant.task_description || plant.name,
+            selectedDate,
+            selectedTime,
+            duration: selectedDuration
+          })
+        } else {
+          failedCount++
+        }
+
+        // Small delay between exports to avoid rate limiting
+        if (plant !== activeTasks[activeTasks.length - 1]) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+
+      // Close modal and reset form
+      setShowCalendarModal(false)
+      setSelectedDate('')
+      setSelectedTime('')
+      setSelectedDuration(2)
+      
+      // Show results
+      if (exportedCount > 0 && failedCount === 0) {
+        sounds.playUI('success')
+        onSuccess(`Successfully exported ${exportedCount} task(s) to Google Calendar!`)
+      } else if (exportedCount > 0 && failedCount > 0) {
+        sounds.playUI('success')
+        onSuccess(`Exported ${exportedCount} task(s), ${failedCount} failed. Check console for details.`)
+      } else {
+        onSuccess("Failed to export tasks to Google Calendar. Please try again.")
+      }
+
+    } catch (error) {
+      console.error('Calendar export error:', error)
+      onSuccess("Error exporting to Google Calendar. Please try again.")
+    }
+  }
+
+  const handleCloseCalendarModal = () => {
+    setShowCalendarModal(false)
+    setSelectedDate('')
+    setSelectedTime('')
+    setSelectedDuration(2)
+    sounds.playUI('modal_close')
+  }
+
   const handleWorkSubmit = async (plantId: string, hours: number) => {
+    // Check if user has already logged work for THIS SPECIFIC TASK today (unless in debug mode)
+    const hasLoggedForThisTask = DailyWorkService.hasLoggedWorkToday(plantId)
+    const isDebugEnabled = DailyWorkService.isDebugModeEnabled()
+    
+    if (hasLoggedForThisTask && !isDebugEnabled) {
+      onSuccess("You can only log work once per day for each task! Enable debug mode to override this limit.")
+      return
+    }
+    
+    // Log the work attempt
+    DailyWorkService.logWork(plantId, hours)
+    
+    // Proceed with normal work logging
     await onLogWork(plantId, hours)
     onSetFocusedPlant(null)
     onSuccess("Great work! Your task is growing!")
+  }
+
+  const toggleDebugMode = () => {
+    const newDebugMode = !debugMode
+    setDebugMode(newDebugMode)
+    DailyWorkService.setDebugMode(newDebugMode)
+    sounds.playUI('button')
+    onSuccess(`Debug mode ${newDebugMode ? 'enabled' : 'disabled'}!`)
+  }
+
+  const handleDebugPanelToggle = () => {
+    setShowDebugPanel(!showDebugPanel)
+    sounds.playUI('button')
   }
 
   return createPortal(
@@ -65,12 +209,50 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
           <div className="text-center">
             {shouldAutoShow ? (
               <>
-                <h2 className="text-2xl font-bold text-white mb-2">Good morning!</h2>
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <h2 className="text-2xl font-bold text-white">Good morning!</h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleExportToGoogleCalendar}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 hover:text-blue-100 rounded-lg font-medium transition-colors text-sm"
+                      title="Export tasks to Google Calendar"
+                    >
+                      <Calendar size={16} />
+                      Export to Calendar
+                    </button>
+                    <button
+                      onClick={handleDebugPanelToggle}
+                      className="p-1.5 bg-gray-600/20 hover:bg-gray-600/30 text-gray-300 hover:text-gray-200 rounded transition-colors"
+                      title="Debug Mode"
+                    >
+                      <Hammer size={12} />
+                    </button>
+                  </div>
+                </div>
                 <p className="text-green-200">Ready to tend your garden? What will you work on today?</p>
               </>
             ) : (
               <>
-                <h2 className="text-2xl font-bold text-white mb-2">Your Daily Tasks</h2>
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <h2 className="text-2xl font-bold text-white">Your Daily Tasks</h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleExportToGoogleCalendar}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 hover:text-blue-100 rounded-lg font-medium transition-colors text-sm"
+                      title="Export tasks to Google Calendar"
+                    >
+                      <Calendar size={16} />
+                      Export to Calendar
+                    </button>
+                    <button
+                      onClick={handleDebugPanelToggle}
+                      className="p-1.5 bg-gray-600/20 hover:bg-gray-600/30 text-gray-300 hover:text-gray-200 rounded transition-colors"
+                      title="Debug Mode"
+                    >
+                      <Hammer size={12} />
+                    </button>
+                  </div>
+                </div>
                 <p className="text-green-200">What have you worked on? What are you working on?</p>
               </>
             )}
@@ -81,13 +263,13 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-4 p-3 bg-orange-500/20 border border-orange-400/30 rounded-lg"
+              className="mt-3 p-2 bg-orange-500/20 border border-orange-400/30 rounded-lg"
             >
               <div className="flex items-center justify-center gap-2 text-orange-200">
-                <span className="text-orange-400">⚠️</span>
-                <span className="font-medium">Daily XP Decay Applied</span>
+                <span className="text-orange-400 text-sm">⚠️</span>
+                <span className="font-medium text-sm">Daily XP Decay Applied</span>
               </div>
-              <div className="text-center text-sm text-orange-300 mt-1">
+              <div className="text-center text-xs text-orange-300 mt-1">
                 Lost {dailyDecayInfo.decay_applied} XP (Base: {dailyDecayInfo.base_decay}, Protected: {dailyDecayInfo.streak_protection})
               </div>
               {dailyDecayInfo.streak && dailyDecayInfo.streak > 0 && (
@@ -98,18 +280,58 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
             </motion.div>
           )}
 
+          {/* Debug Panel */}
+          {showDebugPanel && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-3 p-3 bg-gray-800/40 border border-gray-600/30 rounded-lg"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-medium text-white text-sm">Debug Settings</span>
+                <span className={`text-xs px-2 py-1 rounded ${debugMode ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                  {debugMode ? 'ON' : 'OFF'}
+                </span>
+              </div>
+              
+              <div className="space-y-2">
+                <button
+                  onClick={toggleDebugMode}
+                  className={`w-full px-3 py-2 rounded-lg font-medium transition-colors text-sm ${
+                    debugMode 
+                      ? 'bg-red-500/20 hover:bg-red-500/30 text-red-200 hover:text-red-100' 
+                      : 'bg-green-500/20 hover:bg-green-500/30 text-green-200 hover:text-green-100'
+                  }`}
+                >
+                  {debugMode ? 'Disable Debug Mode' : 'Enable Debug Mode'}
+                </button>
+                
+                <button
+                  onClick={() => {
+                    DailyWorkService.clearAllLogs()
+                    sounds.playUI('success')
+                    onSuccess('Work logs cleared!')
+                  }}
+                  className="w-full px-3 py-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-200 hover:text-orange-100 rounded-lg font-medium transition-colors text-sm"
+                >
+                  Clear All Work Logs
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           {/* Streak Protection Message - Only show if no decay due to streak */}
           {dailyDecayInfo && dailyDecayInfo.message && dailyDecayInfo.message.includes('No decay applied due to streak protection') && (
             <motion.div
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="mt-4 p-3 bg-green-500/20 border border-green-400/30 rounded-lg"
+              className="mt-3 p-2 bg-green-500/20 border border-green-400/30 rounded-lg"
             >
               <div className="flex items-center justify-center gap-2 text-green-200">
-                <span className="text-green-400">🛡️</span>
-                <span className="font-medium">Streak Protection Active!</span>
+                <span className="text-green-400 text-sm">🛡️</span>
+                <span className="font-medium text-sm">Streak Protection Active!</span>
               </div>
-              <div className="text-center text-sm text-green-300 mt-1">
+              <div className="text-center text-xs text-green-300 mt-1">
                 Your {dailyDecayInfo.streak}-day streak fully protected you from XP decay
               </div>
             </motion.div>
@@ -170,6 +392,11 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
                   }`}>
                     {plant.type}
                   </span>
+                  {DailyWorkService.hasLoggedWorkToday(plant.id) && (
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-500/20 text-green-200">
+                      ✓ Worked Today
+                    </span>
+                  )}
                   <span className="text-sm">
                     {(plant.current_streak || 0) >= 7 ? 'Hot' :
                      (plant.current_streak || 0) >= 3 ? 'Active' :
@@ -192,44 +419,61 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
               </div>
 
               {plant.task_status === 'active' && (
-                <div className="flex space-x-2">
-                  <input
-                    id={`task-input-${plant.id}`}
-                    type="number"
-                    step="0.5"
-                    min="0"
-                    max="24"
-                    placeholder="Hours worked today"
-                    className={`flex-1 px-3 py-3 bg-white/10 border border-white/20 rounded text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-500 min-h-[44px] ${
-                      focusedPlantId === plant.id ? 'ring-2 ring-green-500' : ''
-                    }`}
-                    style={{ fontSize: '16px' }} // Prevents zoom on iOS
-                    onKeyPress={async (e) => {
-                      if (e.key === 'Enter') {
-                        const hours = parseFloat((e.target as HTMLInputElement).value)
-                        if (hours > 0) {
-                          await handleWorkSubmit(plant.id, hours);
-                          (e.target as HTMLInputElement).value = ''
+                <>
+                  {/* Daily limit warning */}
+                  {DailyWorkService.hasLoggedWorkToday(plant.id) && !DailyWorkService.isDebugModeEnabled() && (
+                    <div className="mb-2 p-2 bg-yellow-500/20 border border-yellow-400/30 rounded-lg">
+                      <div className="flex items-center gap-2 text-yellow-200 text-sm">
+                        <span>⚠️</span>
+                        <span>Already logged work for this task today. Enable debug mode to continue.</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="flex space-x-2">
+                    <input
+                      id={`task-input-${plant.id}`}
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max="24"
+                      placeholder={DailyWorkService.hasLoggedWorkToday(plant.id) && !DailyWorkService.isDebugModeEnabled() ? "Already logged today" : "Hours worked today"}
+                      disabled={DailyWorkService.hasLoggedWorkToday(plant.id) && !DailyWorkService.isDebugModeEnabled()}
+                      className={`flex-1 px-3 py-3 border rounded text-white placeholder-white/50 focus:outline-none min-h-[44px] ${
+                        DailyWorkService.hasLoggedWorkToday(plant.id) && !DailyWorkService.isDebugModeEnabled()
+                          ? 'bg-gray-500/20 border-gray-500/30 cursor-not-allowed text-gray-400'
+                          : `bg-white/10 border-white/20 focus:ring-2 focus:ring-green-500 ${
+                              focusedPlantId === plant.id ? 'ring-2 ring-green-500' : ''
+                            }`
+                      }`}
+                      style={{ fontSize: '16px' }} // Prevents zoom on iOS
+                      onKeyPress={async (e) => {
+                        if (e.key === 'Enter') {
+                          const hours = parseFloat((e.target as HTMLInputElement).value)
+                          if (hours > 0) {
+                            await handleWorkSubmit(plant.id, hours);
+                            (e.target as HTMLInputElement).value = ''
+                          }
                         }
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      sounds.playUI('button')
-                      onCompleteTask(plant.id)
-                    }}
-                    disabled={plant.stage < 4}
-                    className={`px-4 py-3 rounded text-sm font-medium transition-colors min-h-[44px] ${
-                      plant.stage >= 4 
-                        ? 'bg-green-600 hover:bg-green-700 text-white' 
-                        : 'bg-gray-500 text-gray-300 cursor-not-allowed'
-                    }`}
-                    title={plant.stage < 4 ? `Plant needs to reach stage 4 to complete (currently stage ${plant.stage})` : 'Mark task as complete'}
-                  >
-                    {plant.stage >= 4 ? 'Complete' : `Complete (Stage ${plant.stage}/4)`}
-                  </button>
-                </div>
+                      }}
+                    />
+                    <button
+                      onClick={() => {
+                        sounds.playUI('button')
+                        onCompleteTask(plant.id)
+                      }}
+                      disabled={plant.stage < 4}
+                      className={`px-4 py-3 rounded text-sm font-medium transition-colors min-h-[44px] ${
+                        plant.stage >= 4 
+                          ? 'bg-green-600 hover:bg-green-700 text-white' 
+                          : 'bg-gray-500 text-gray-300 cursor-not-allowed'
+                      }`}
+                      title={plant.stage < 4 ? `Plant needs to reach stage 4 to complete (currently stage ${plant.stage})` : 'Mark task as complete'}
+                    >
+                      {plant.stage >= 4 ? 'Complete' : `Complete (Stage ${plant.stage}/4)`}
+                    </button>
+                  </div>
+                </>
               )}
 
               {plant.task_status === 'completed' && (
@@ -244,15 +488,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
             {plants.length === 0 && (
               <div className="text-center py-8">
                 <p className="text-white/70 mb-4">No tasks yet!</p>
-                <button
-                  onClick={() => {
-                    sounds.playUI('button')
-                    onCreateNew()
-                  }}
-                  className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
-                >
-                  Create Your First Task
-                </button>
+                <p className="text-white/50 text-sm">Click on empty spots in the garden to create new tasks</p>
               </div>
             )}
           </div>
@@ -260,20 +496,7 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
 
         {/* Fixed Footer */}
         <div className="p-4 sm:p-6 pt-4 border-t border-white/10">
-          <div className="flex items-center justify-between">
-            {plants.length > 0 && (
-              <button
-                onClick={() => {
-                  sounds.playUI('button')
-                  onCreateNew()
-                }}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add New Task</span>
-              </button>
-            )}
-            
+          <div className="flex items-center justify-end">
             <button
               onClick={() => {
                 sounds.playUI('button')
@@ -286,6 +509,128 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
           </div>
         </div>
       </motion.div>
+
+      {/* Calendar Export Modal */}
+      {showCalendarModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4"
+          onClick={(e) => {
+            // Only close if clicking the backdrop, not the modal content
+            if (e.target === e.currentTarget) {
+              handleCloseCalendarModal()
+            }
+          }}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-gradient-to-b from-green-800/90 to-green-900/90 rounded-lg border border-white/20 backdrop-blur-sm p-6 w-full max-w-md"
+            onClick={(e) => {
+              // Prevent clicks inside the modal from bubbling up
+              e.stopPropagation()
+            }}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-white">Export to Google Calendar</h3>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleCloseCalendarModal()
+                }}
+                className="p-1 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-white" />
+              </button>
+            </div>
+
+            {/* Show how many tasks will be exported */}
+            <div className="mb-4 p-3 bg-blue-500/20 rounded-lg border border-blue-400/30">
+              <p className="text-blue-200 text-sm">
+                {plants.filter(p => p.task_status === 'active').length} active task(s) will be exported
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-white/90 text-sm font-medium mb-2">
+                  Select Date
+                </label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    setSelectedDate(e.target.value)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400"
+                  min={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+
+              <div>
+                <label className="block text-white/90 text-sm font-medium mb-2">
+                  Select Time
+                </label>
+                <input
+                  type="time"
+                  value={selectedTime}
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    setSelectedTime(e.target.value)
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-green-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-white/90 text-sm font-medium mb-2">
+                  Duration (hours)
+                </label>
+                <select
+                  value={selectedDuration}
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    setSelectedDuration(Number(e.target.value))
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-green-400"
+                >
+                  <option value={0.5} className="bg-green-800 text-white">30 minutes</option>
+                  <option value={1} className="bg-green-800 text-white">1 hour</option>
+                  <option value={1.5} className="bg-green-800 text-white">1.5 hours</option>
+                  <option value={2} className="bg-green-800 text-white">2 hours</option>
+                  <option value={3} className="bg-green-800 text-white">3 hours</option>
+                  <option value={4} className="bg-green-800 text-white">4 hours</option>
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleCloseCalendarModal()
+                  }}
+                  className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleCalendarExportSubmit()
+                  }}
+                  className="flex-1 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+                >
+                  Export to Google Calendar
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>,
     document.body
   )

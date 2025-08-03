@@ -234,6 +234,8 @@ export default function CanvasGarden() {
     } else {
       setSelectedPlant(null)
       closeAllModalsExcept() // Close all modals when clicking outside grid
+      // Open task panel when clicking outside the garden
+      setShowTaskPanel(true)
     }
   }
 
@@ -973,14 +975,30 @@ export default function CanvasGarden() {
         />
       </motion.div>
 
-      <div className="relative flex-1 min-h-0 overflow-hidden">
+      <div className="relative flex-1 min-h-0 overflow-hidden" onClick={(e) => {
+        // Only open task panel if clicking on the container itself, not its children
+        if (e.target === e.currentTarget) {
+          setShowTaskPanel(true)
+        }
+      }}>
         <motion.div 
           className="relative z-10 h-full"
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.7, delay: 0.4, ease: "easeOut" }}
+          onClick={(e) => {
+            // Only open task panel if clicking on the motion div itself, not its children
+            if (e.target === e.currentTarget) {
+              setShowTaskPanel(true)
+            }
+          }}
         >
-          <div className="flex h-full p-2 sm:p-4 justify-center items-center">
+          <div className="flex h-full p-2 sm:p-4 justify-center items-center" onClick={(e) => {
+            // Only open task panel if clicking on the flex container itself, not its children
+            if (e.target === e.currentTarget) {
+              setShowTaskPanel(true)
+            }
+          }}>
             <CinematicPlotFocus
               isActive={isCinemaMode}
               focusPosition={focusPosition}
@@ -1096,7 +1114,6 @@ export default function CanvasGarden() {
         }}
         onLogWork={logWork}
         onCompleteTask={completeTask}
-        onCreateNew={() => {}}
         onSuccess={showSuccessMsg}
         focusedPlantId={focusedPlantId}
         onSetFocusedPlant={setFocusedPlantId}
