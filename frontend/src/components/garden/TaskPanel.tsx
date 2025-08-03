@@ -209,18 +209,36 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
         {/* Fixed Footer */}
         <div className="p-4 sm:p-6 pt-4 border-t border-white/10">
           <div className="flex items-center justify-between">
-            {plants.length > 0 && (
+            <div className="flex items-center gap-3">
+              {plants.length > 0 && (
+                <button
+                  onClick={() => {
+                    sounds.playUI('button')
+                    onCreateNew()
+                  }}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add New Task</span>
+                </button>
+              )}
+
+              {/* Google Calendar Button */}
               <button
                 onClick={() => {
                   sounds.playUI('button')
-                  onCreateNew()
+                  onSuccess('Google Calendar integration coming soon!')
                 }}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center space-x-2"
+                title="Add from Google Calendar"
               >
-                <Plus className="w-4 h-4" />
-                <span>Add New Task</span>
+                {/* Google Calendar Icon */}
+                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7z"/>
+                </svg>
+                <span>Add from Calendar</span>
               </button>
-            )}
+            </div>
             
             <button
               onClick={() => {

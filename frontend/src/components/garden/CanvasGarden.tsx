@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Settings } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { api } from '../../lib/api'
 import { useSounds } from '../../lib/sounds'
@@ -29,6 +30,7 @@ import {
   getRandomPlantForCategory,
   isPositionPlantable
 } from './'
+import { SoundSettings } from '../SoundSettings'
 import type { Plant } from './'
 
 export default function CanvasGarden() {
@@ -55,6 +57,7 @@ export default function CanvasGarden() {
   const [showWorkDialog, setShowWorkDialog] = useState(false)
   const [showTrophyDialog, setShowTrophyDialog] = useState(false)
   const [showTaskPanel, setShowTaskPanel] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   
   // Task panel states
   const [shouldAutoShowTasks, setShouldAutoShowTasks] = useState(false)
@@ -68,7 +71,7 @@ export default function CanvasGarden() {
   // Sprite loading
   const [loadedSprites, setLoadedSprites] = useState<Map<string, HTMLImageElement>>(new Map())
 
-  const isBlockingModalOpen = showPlantCreator || showWorkDialog || showTrophyDialog || (mode === 'info' && selectedPlant !== null)
+  const isBlockingModalOpen = showPlantCreator || showWorkDialog || showTrophyDialog || showSettings || (mode === 'info' && selectedPlant !== null)
 
   // Cinematic planting system
   const {
@@ -830,6 +833,27 @@ export default function CanvasGarden() {
         onSetFocusedPlant={setFocusedPlantId}
       />
 
+      {/* Floating Settings Button - Show when no modals are open */}
+      {!showTaskPanel && !showSettings && plants.length > 0 && (
+        <motion.button
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.8 }}
+          onClick={() => {
+            // Play UI sound for opening settings
+            sounds.playUI('button')
+            
+            // Open the Settings modal
+            setShowSettings(true)
+          }}
+          className="fixed bottom-6 right-6 z-40 bg-gray-600 hover:bg-gray-700 text-white rounded-full p-4 shadow-lg hover:shadow-xl transition-all duration-300 flex items-center space-x-2 group"
+          title="Open Settings"
+        >
+          <Settings className="w-5 h-5" />
+          <span className="hidden group-hover:block text-sm font-medium">Settings</span>
+        </motion.button>
+      )}
+
       <SuccessMessage
         message={submissionMessage}
         isVisible={showSuccessMessage}
@@ -864,6 +888,12 @@ export default function CanvasGarden() {
       ))}
       
       <LoadingState isLoading={loading} />
+      
+      {/* Settings Modal */}
+      <SoundSettings
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </motion.div>
   )
 }
