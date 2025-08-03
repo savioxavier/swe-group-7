@@ -195,14 +195,7 @@ export default function SignUp() {
                     <span>Creating account...</span>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center space-x-2">
-                    <img 
-                      src="/assets/logo.png" 
-                      alt="TaskGarden Logo" 
-                      className="w-5 h-5 object-cover rounded"
-                    />
-                    <span>Plant Your Garden</span>
-                  </div>
+                  <span>Plant Your Garden</span>
                 )}
               </motion.button>
             </form>

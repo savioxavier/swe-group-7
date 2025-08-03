@@ -1,6 +1,6 @@
 import React from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Plus, Info, BarChart3, Zap, Trophy } from 'lucide-react'
+import { X, Zap, Trophy } from 'lucide-react'
 import type { UserProgressResponse } from '../../types'
 
 interface MobileMenuProps {
@@ -8,8 +8,6 @@ interface MobileMenuProps {
   onClose: () => void
   userProgress: UserProgressResponse | null
   longestPlantStreak: number
-  mode: 'plant' | 'info' | 'tasks'
-  onModeChange: (mode: 'plant' | 'info' | 'tasks') => void
 }
 
 /**
@@ -17,7 +15,6 @@ interface MobileMenuProps {
  * Features:
  * - Overlay design (mobile app standard)
  * - Stats displayed at top
- * - Mode buttons with icons
  * - Smooth animations
  * - Touch-optimized sizing
  */
@@ -25,23 +22,8 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
   isOpen,
   onClose,
   userProgress,
-  longestPlantStreak,
-  mode,
-  onModeChange
+  longestPlantStreak
 }) => {
-  /**
-   * Handle mode change and auto-close menu for better UX
-   * Also provide haptic feedback on supported devices
-   */
-  const handleModeChange = (newMode: 'plant' | 'info' | 'tasks') => {
-    // Provide haptic feedback on mobile devices
-    if ('vibrate' in navigator) {
-      navigator.vibrate(50) // Short vibration for feedback
-    }
-    
-    onModeChange(newMode)
-    onClose() // Auto-close for seamless interaction
-  }
 
   return (
     <AnimatePresence>
@@ -118,60 +100,19 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
               </div>
             </div>
 
-            {/* Mode selection buttons */}
+            {/* Simple menu information */}
             <div className="p-4 sm:p-6">
               <h3 className="text-xs sm:text-sm font-medium text-green-200 mb-3 sm:mb-4 uppercase tracking-wide">
-                Garden Modes
+                TaskGarden
               </h3>
               
-              <div className="space-y-2">
-                {/* Plant mode button */}
-                <button
-                  onClick={() => handleModeChange('plant')}
-                  className={`w-full p-3 sm:p-4 rounded-lg flex items-center space-x-3 transition-colors min-h-[48px] sm:min-h-[56px] ${
-                    mode === 'plant'
-                      ? 'bg-green-600 text-white'
-                      : 'bg-white/10 text-white hover:bg-white/20'
-                  }`}
-                >
-                  <Plus className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
-                  <div className="text-left min-w-0 flex-1">
-                    <div className="font-medium text-sm sm:text-base">Plant Mode</div>
-                    <div className="text-xs sm:text-sm opacity-75">Add new plants</div>
-                  </div>
-                </button>
-
-                {/* Info mode button */}
-                <button
-                  onClick={() => handleModeChange('info')}
-                  className={`w-full p-3 sm:p-4 rounded-lg flex items-center space-x-3 transition-colors min-h-[48px] sm:min-h-[56px] ${
-                    mode === 'info'
-                      ? 'bg-cyan-600 text-white'
-                      : 'bg-white/10 text-white hover:bg-white/20'
-                  }`}
-                >
-                  <Info className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
-                  <div className="text-left min-w-0 flex-1">
-                    <div className="font-medium text-sm sm:text-base">Info Mode</div>
-                    <div className="text-xs sm:text-sm opacity-75">View plant details</div>
-                  </div>
-                </button>
-
-                {/* Tasks mode button */}
-                <button
-                  onClick={() => handleModeChange('tasks')}
-                  className={`w-full p-3 sm:p-4 rounded-lg flex items-center space-x-3 transition-colors min-h-[48px] sm:min-h-[56px] ${
-                    mode === 'tasks'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-white/10 text-white hover:bg-white/20'
-                  }`}
-                >
-                  <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
-                  <div className="text-left min-w-0 flex-1">
-                    <div className="font-medium text-sm sm:text-base">Tasks Mode</div>
-                    <div className="text-xs sm:text-sm opacity-75">Log work & complete tasks</div>
-                  </div>
-                </button>
+              <div className="text-sm text-green-100/80">
+                Right-click any plant to access all available actions:
+                <ul className="mt-2 space-y-1 text-xs text-green-100/60">
+                  <li>• View plant details and analytics</li>
+                  <li>• Log work hours or harvest mature plants</li>
+                  <li>• Manage plants (rename/delete)</li>
+                </ul>
               </div>
             </div>
           </motion.div>

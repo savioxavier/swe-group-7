@@ -6,51 +6,6 @@ export { SoundManager } from './soundManager'
 import { SoundManager } from './soundManager'
 export const soundManager = new SoundManager()
 
-// Global sound controls for development/debugging
-const createGlobalSoundControls = () => {
-  if (typeof window === 'undefined') return {}
-
-  return {
-    enableDebug: () => soundManager.enableDebugMode(true),
-    disableDebug: () => soundManager.enableDebugMode(false),
-    setVolume: (volume: number) => soundManager.setMasterVolume(volume),
-    testUI: () => soundManager.playUI('click'),
-    testPlant: () => soundManager.playPlant('click'),
-    testAchievement: () => soundManager.playAchievement('xp_gain'),
-    initializeAudio: () => soundManager.initializeAudio(),
-    startBackgroundMusic: () => soundManager.startBackgroundMusic(),
-    stopBackgroundMusic: () => soundManager.stopBackgroundMusic(),
-    testBackgroundMusic: () => {
-      console.log('Testing background music...')
-      const music = soundManager.getBackgroundMusic()
-      if (music) {
-        console.log('Background music found:', {
-          playing: music.playing(),
-          volume: music.volume(),
-          state: music.state ? music.state() : 'unknown'
-        })
-        soundManager.startBackgroundMusic()
-      } else {
-        console.log('Background music not found in sound manager')
-        console.log('Available sounds:', soundManager.getDebugInfo().availableSounds)
-      }
-    },
-    testAllSounds: () => {
-      console.log('Testing all sound categories...')
-      soundManager.playUI('click')
-      setTimeout(() => soundManager.playPlant('water'), 200)
-      setTimeout(() => soundManager.playAchievement('xp_gain'), 400)
-      setTimeout(() => soundManager.playPlant('grow'), 600)
-    },
-    getDebugInfo: () => soundManager.getDebugInfo()
-  }
-}
-
-// Make global controls available
-if (typeof window !== 'undefined') {
-  ;(window as unknown as { TaskGardenSounds: ReturnType<typeof createGlobalSoundControls> }).TaskGardenSounds = createGlobalSoundControls()
-}
-
 // Hook for React components
 export const useSounds = () => {
   return {
@@ -67,9 +22,16 @@ export const useSounds = () => {
     setEnabled: soundManager.setEnabled.bind(soundManager),
     isAudioEnabled: soundManager.isAudioEnabled.bind(soundManager),
     setBackgroundMusicVolume: soundManager.setBackgroundMusicVolume.bind(soundManager),
-    play: soundManager.play.bind(soundManager),
-    enableDebugMode: soundManager.enableDebugMode.bind(soundManager),
-    getDebugInfo: soundManager.getDebugInfo.bind(soundManager)
+    getBackgroundMusicVolume: soundManager.getBackgroundMusicVolume.bind(soundManager),
+    setSoundEffectsVolume: soundManager.setSoundEffectsVolume.bind(soundManager),
+    getSoundEffectsVolume: soundManager.getSoundEffectsVolume.bind(soundManager),
+    setIsBackgroundMusicEnabled: soundManager.setIsBackgroundMusicEnabled.bind(soundManager),
+    getIsBackgroundMusicEnabled: soundManager.getIsBackgroundMusicEnabled.bind(soundManager),
+    setIsSoundEffectsEnabled: soundManager.setIsSoundEffectsEnabled.bind(soundManager),
+    getIsSoundEffectsEnabled: soundManager.getIsSoundEffectsEnabled.bind(soundManager),
+    setAudioVariationsEnabled: soundManager.setAudioVariationsEnabled.bind(soundManager),
+    getAudioVariationsEnabled: soundManager.getAudioVariationsEnabled.bind(soundManager),
+    play: soundManager.play.bind(soundManager)
   }
 }
 
@@ -88,9 +50,7 @@ export const sounds = {
   setEnabled: soundManager.setEnabled.bind(soundManager),
   isAudioEnabled: soundManager.isAudioEnabled.bind(soundManager),
   setBackgroundMusicVolume: soundManager.setBackgroundMusicVolume.bind(soundManager),
-  play: soundManager.play.bind(soundManager),
-  enableDebugMode: soundManager.enableDebugMode.bind(soundManager),
-  getDebugInfo: soundManager.getDebugInfo.bind(soundManager)
+  play: soundManager.play.bind(soundManager)
 }
 
 // Default export for compatibility

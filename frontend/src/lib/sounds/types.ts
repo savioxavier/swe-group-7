@@ -44,12 +44,4 @@ export interface SoundManager {
   startBackgroundMusic(): Promise<void>
   stopBackgroundMusic(): void
   setMasterVolume(volume: number): void
-  enableDebugMode(enabled?: boolean): void
-  getDebugInfo(): {
-    soundCount: number
-    availableSounds: string[]
-    masterVolume: number
-    audioEnabled: boolean
-    debugMode: boolean
-  }
 }

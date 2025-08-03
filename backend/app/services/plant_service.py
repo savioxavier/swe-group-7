@@ -27,7 +27,12 @@ class PlantService:
                 "experience_points": 0,
                 "is_active": True,
                 "decay_status": DecayStatus.HEALTHY.value,
-                "days_without_care": 0
+                "days_without_care": 0,
+                # Multi-step task fields
+                "is_multi_step": plant_data.is_multi_step,
+                "task_steps": [step.dict() for step in plant_data.task_steps] if plant_data.task_steps else [],
+                "completed_steps": 0,
+                "total_steps": len(plant_data.task_steps) if plant_data.task_steps else 0
             }
             
             if hasattr(plant_data, 'productivity_category') and plant_data.productivity_category:
@@ -53,11 +58,13 @@ class PlantService:
         client = auth_supabase or supabase
         try:
             # PERFORMANCE OPTIMIZATION: Select only necessary fields to reduce data transfer
+            # IMPORTANT: Include multi-step task fields for proper task step display
             result = client.table("plants").select(
                 "id, user_id, name, task_name, task_description, task_status, plant_type, plant_sprite, "
                 "position_x, position_y, growth_level, experience_points, current_streak, "
                 "last_worked_date, days_without_care, decay_status, is_active, "
-                "created_at, updated_at, completion_date"
+                "created_at, updated_at, completion_date, "
+                "is_multi_step, task_steps, completed_steps, total_steps"
             ).eq("user_id", user_id).eq("is_active", True).order("position_x", desc=False).order("position_y", desc=False).execute()
             
             plants = []
@@ -70,6 +77,12 @@ class PlantService:
                 plant_dict.setdefault('task_description', None)
                 plant_dict.setdefault('task_status', 'active')
                 plant_dict.setdefault('plant_type', PlantType.WORK.value)
+                
+                # Set defaults for multi-step task fields (backwards compatibility)
+                plant_dict.setdefault('is_multi_step', False)
+                plant_dict.setdefault('task_steps', [])
+                plant_dict.setdefault('completed_steps', 0)
+                plant_dict.setdefault('total_steps', 0)
                 
                 # Pre-calculate derived fields once (faster than multiple calculations)
                 experience_points = plant_dict.get('experience_points', 0)
@@ -527,3 +540,223 @@ class PlantService:
             
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get today's work logs: {str(e)}")
+
+    @staticmethod
+    async def complete_task_step(user_id: str, step_data, auth_supabase=None):
+        """Complete a task step and update plant growth based on milestone-based system"""
+        client = auth_supabase or supabase
+        try:
+            # Get plant with current steps
+            plant_result = client.table("plants").select("*").eq("id", step_data.plant_id).eq("user_id", user_id).single().execute()
+            
+            if not plant_result.data:
+                raise HTTPException(status_code=404, detail="Plant not found")
+            
+            plant = plant_result.data
+            
+            # Update task steps
+            task_steps = plant.get("task_steps", [])
+            step_found = False
+            completed_steps = 0
+            
+            for step in task_steps:
+                if step.get("id") == step_data.step_id:
+                    step["is_completed"] = True
+                    step["completed_at"] = datetime.now().isoformat()
+                    if hasattr(step_data, 'hours_worked') and step_data.hours_worked:
+                        step["work_hours"] = step.get("work_hours", 0) + step_data.hours_worked
+                    step_found = True
+                
+                if step.get("is_completed"):
+                    completed_steps += 1
+            
+            if not step_found:
+                raise HTTPException(status_code=404, detail="Task step not found")
+            
+            # Calculate milestone-based growth
+            total_steps = len(task_steps)
+            
+            # Each completed step = 1 growth stage (up to stage 5)
+            new_growth_stage = min(5, completed_steps)
+            new_growth_level = new_growth_stage * 20  # Convert stage to 0-100 scale
+            
+            # Calculate experience (bonus for completing steps)
+            experience_bonus = 50 if completed_steps == total_steps else 25
+            hours_xp = int((step_data.hours_worked or 1) * 100)
+            total_experience_gained = hours_xp + experience_bonus
+            
+            # Update plant
+            update_data = {
+                "task_steps": task_steps,
+                "completed_steps": completed_steps,
+                "total_steps": total_steps,
+                "growth_level": new_growth_level,
+                "experience_points": plant["experience_points"] + total_experience_gained,
+                "last_worked_date": datetime.now().date().isoformat(),
+                "days_without_care": 0,
+                "decay_status": DecayStatus.HEALTHY.value,
+            }
+            
+            # Mark as completed if all steps done
+            if completed_steps == total_steps:
+                update_data["task_status"] = "completed"
+                update_data["completion_date"] = datetime.now().isoformat()
+            
+            update_result = client.table("plants").update(update_data).eq("id", step_data.plant_id).eq("user_id", user_id).execute()
+            
+            if not update_result.data:
+                raise HTTPException(status_code=400, detail="Failed to update plant")
+            
+            # Update user progress
+            try:
+                await PlantService._update_user_progress_fast(user_id, total_experience_gained)
+            except Exception:
+                pass
+            
+            return {
+                "success": True,
+                "completed_steps": completed_steps,
+                "total_steps": total_steps,
+                "new_growth_stage": new_growth_stage,
+                "experience_gained": total_experience_gained,
+                "task_completed": completed_steps == total_steps
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to complete task step: {str(e)}")
+
+    @staticmethod
+    async def update_task_step_partial(user_id: str, step_data, auth_supabase=None):
+        """Mark a task step as partially complete and add work hours"""
+        client = auth_supabase or supabase
+        try:
+            # Get plant with current steps
+            plant_result = client.table("plants").select("*").eq("id", step_data.plant_id).eq("user_id", user_id).single().execute()
+            
+            if not plant_result.data:
+                raise HTTPException(status_code=404, detail="Plant not found")
+            
+            plant = plant_result.data
+            task_steps = plant.get("task_steps", [])
+            step_found = False
+            
+            for step in task_steps:
+                if step.get("id") == step_data.step_id:
+                    step["is_partial"] = step_data.mark_partial
+                    step["work_hours"] = step.get("work_hours", 0) + step_data.hours_worked
+                    step_found = True
+                    break
+            
+            if not step_found:
+                raise HTTPException(status_code=404, detail="Task step not found")
+            
+            # Calculate experience for work done
+            experience_gained = int(step_data.hours_worked * 100)
+            
+            # For single-step tasks or partial work, give small growth boost
+            current_growth = plant.get("growth_level", 0)
+            growth_boost = min(5, step_data.hours_worked * 2)  # Small visual progress
+            new_growth = min(100, current_growth + growth_boost)
+            
+            # Update plant
+            update_result = client.table("plants").update({
+                "task_steps": task_steps,
+                "growth_level": new_growth,
+                "experience_points": plant["experience_points"] + experience_gained,
+                "last_worked_date": datetime.now().date().isoformat(),
+                "days_without_care": 0,
+                "decay_status": DecayStatus.HEALTHY.value,
+            }).eq("id", step_data.plant_id).eq("user_id", user_id).execute()
+            
+            if not update_result.data:
+                raise HTTPException(status_code=400, detail="Failed to update plant")
+            
+            # Update user progress
+            try:
+                await PlantService._update_user_progress_fast(user_id, experience_gained)
+            except Exception:
+                pass
+            
+            return {
+                "success": True,
+                "experience_gained": experience_gained,
+                "new_growth_level": new_growth,
+                "hours_added": step_data.hours_worked
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to update task step: {str(e)}")
+
+    @staticmethod
+    def calculate_milestone_growth_stage(completed_steps: int, total_steps: int) -> int:
+        """Calculate growth stage based on milestone-based system"""
+        if total_steps == 0:
+            return 0
+        
+        # Each completed step = 1 growth stage (max 5)
+        return min(5, completed_steps)
+
+    @staticmethod
+    def calculate_single_task_growth_stage(hours_worked: float, experience_points: int) -> int:
+        """Calculate growth stage for single-step tasks based on work hours and experience"""
+        # Single-step tasks grow based on accumulated work and experience
+        task_level = PlantService._calculate_task_level(experience_points)
+        return min(5, task_level)
+
+    @staticmethod
+    async def convert_to_multi_step(user_id: str, plant_id: str, task_steps: List, auth_supabase=None):
+        """Convert a single-step task to a multi-step task"""
+        client = auth_supabase or supabase
+        try:
+            # Get the current plant
+            plant_result = client.table("plants").select("*").eq("id", plant_id).eq("user_id", user_id).single().execute()
+            
+            if not plant_result.data:
+                raise HTTPException(status_code=404, detail="Plant not found")
+            
+            plant = plant_result.data
+            
+            # Check if it's already multi-step
+            if plant.get("is_multi_step", False):
+                raise HTTPException(status_code=400, detail="Plant is already a multi-step task")
+            
+            # Add unique IDs to steps
+            from uuid import uuid4
+            steps_with_ids = []
+            for step in task_steps:
+                step_dict = {
+                    "id": str(uuid4()),
+                    "title": step.get("title", ""),
+                    "description": step.get("description", ""),
+                    "is_completed": False,
+                    "is_partial": False,
+                    "work_hours": 0.0,
+                    "completed_at": None
+                }
+                steps_with_ids.append(step_dict)
+            
+            # Update the plant to be multi-step
+            update_result = client.table("plants").update({
+                "is_multi_step": True,
+                "task_steps": steps_with_ids,
+                "total_steps": len(steps_with_ids),
+                "completed_steps": 0
+            }).eq("id", plant_id).eq("user_id", user_id).execute()
+            
+            if not update_result.data:
+                raise HTTPException(status_code=400, detail="Failed to convert plant to multi-step")
+            
+            return {
+                "success": True,
+                "message": "Task converted to multi-step successfully",
+                "total_steps": len(steps_with_ids)
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to convert task: {str(e)}")

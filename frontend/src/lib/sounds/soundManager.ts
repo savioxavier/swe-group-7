@@ -8,7 +8,11 @@ export class SoundManager {
   private sounds: Map<SoundType, Howl> = new Map()
   private isEnabled: boolean = true
   private masterVolume: number = 1.0
-  private debugMode: boolean = false
+  private backgroundMusicVolume: number = 0.3
+  private soundEffectsVolume: number = 0.7
+  private isBackgroundMusicEnabled: boolean = true
+  private isSoundEffectsEnabled: boolean = true
+  private audioVariationsEnabled: boolean = true
   private audioContext: AudioContext | null = null
   private isAudioContextReady: boolean = false
   
@@ -17,9 +21,29 @@ export class SoundManager {
   private achievementSounds: AchievementSoundGenerator | null = null
 
   constructor() {
-    this.debugMode = localStorage.getItem('taskgarden_sound_debug') === 'true'
+    this.loadAudioSettings()
     this.initializeAudioContext()
     this.initializeSounds()
+  }
+
+  private loadAudioSettings() {
+    const masterVolume = localStorage.getItem('taskgarden_master_volume')
+    if (masterVolume) this.masterVolume = parseFloat(masterVolume)
+
+    const bgMusicVolume = localStorage.getItem('taskgarden_background_music_volume')
+    if (bgMusicVolume) this.backgroundMusicVolume = parseFloat(bgMusicVolume)
+
+    const sfxVolume = localStorage.getItem('taskgarden_sound_effects_volume')
+    if (sfxVolume) this.soundEffectsVolume = parseFloat(sfxVolume)
+
+    const bgMusicEnabled = localStorage.getItem('taskgarden_background_music_enabled')
+    if (bgMusicEnabled !== null) this.isBackgroundMusicEnabled = bgMusicEnabled === 'true'
+
+    const sfxEnabled = localStorage.getItem('taskgarden_sound_effects_enabled')
+    if (sfxEnabled !== null) this.isSoundEffectsEnabled = sfxEnabled === 'true'
+
+    const variationsEnabled = localStorage.getItem('taskgarden_audio_variations_enabled')
+    if (variationsEnabled !== null) this.audioVariationsEnabled = variationsEnabled === 'true'
   }
 
   private async initializeAudioContext() {
@@ -423,7 +447,7 @@ export class SoundManager {
 
   // Public API methods
   play(type: SoundType) {
-    if (!this.isEnabled) return
+    if (!this.isEnabled || !this.isSoundEffectsEnabled) return
     
     const sound = this.sounds.get(type)
     if (sound) {
@@ -444,7 +468,7 @@ export class SoundManager {
   }
 
   async startBackgroundMusic() {
-    if (!this.isEnabled) {
+    if (!this.isEnabled || !this.isBackgroundMusicEnabled) {
       return
     }
 
@@ -459,24 +483,50 @@ export class SoundManager {
     }
 
     if (!music.playing()) {
-      music.volume(0.2 * this.masterVolume)
+      music.volume(this.backgroundMusicVolume * this.masterVolume)
       
-      const randomRate = 0.9 + Math.random() * 0.2
-      music.rate(randomRate)
+      // Apply audio variations if enabled
+      if (this.audioVariationsEnabled) {
+        const randomRate = 0.8 + Math.random() * 0.4
+        music.rate(randomRate)
+      }
       
       try {
         music.play()
         
         music.on('end', () => {
-          if (music.loop()) {
-            const newRate = 0.9 + Math.random() * 0.2
+          if (music.loop() && this.audioVariationsEnabled) {
+            const newRate = 0.8 + Math.random() * 0.4
             music.rate(newRate)
           }
         })
+
+        // Set up loop variation timer if variations are enabled
+        if (this.audioVariationsEnabled) {
+          this.setupAudioVariationTimer(music)
+        }
       } catch (error) {
         console.error('Background music play failed', error)
       }
     }
+  }
+
+  private setupAudioVariationTimer(music: Howl) {
+    // Apply noticeable variations every 20-45 seconds during playback
+    const variationInterval = setInterval(() => {
+      if (!music.playing() || !this.audioVariationsEnabled || !this.isBackgroundMusicEnabled) {
+        clearInterval(variationInterval)
+        return
+      }
+
+      const pitchVariation = 0.8 + Math.random() * 0.4
+      music.rate(pitchVariation)
+      
+      const currentVolume = this.backgroundMusicVolume * this.masterVolume
+      const volumeVariation = 0.7 + Math.random() * 0.6
+      const newVolume = Math.max(0.1, Math.min(1.0, currentVolume * volumeVariation))
+      music.volume(newVolume)
+    }, (20 + Math.random() * 25) * 1000)
   }
 
   stopBackgroundMusic() {
@@ -488,7 +538,13 @@ export class SoundManager {
 
   setMasterVolume(volume: number) {
     this.masterVolume = Math.max(0, Math.min(1, volume))
-    localStorage.setItem('taskgarden_sound_volume', this.masterVolume.toString())
+    localStorage.setItem('taskgarden_master_volume', this.masterVolume.toString())
+    
+    // Update background music volume immediately
+    const music = this.sounds.get('background_music')
+    if (music) {
+      music.volume(this.backgroundMusicVolume * this.masterVolume)
+    }
     
     // Update generator volumes
     if (this.uiSounds && this.audioContext) {
@@ -516,10 +572,12 @@ export class SoundManager {
   }
 
   setBackgroundMusicVolume(volume: number) {
+    this.backgroundMusicVolume = Math.max(0, Math.min(1, volume))
+    localStorage.setItem('taskgarden_background_music_volume', this.backgroundMusicVolume.toString())
+    
     const bgMusic = this.sounds.get('background_music')
     if (bgMusic) {
-      bgMusic.volume(Math.max(0, Math.min(1, volume)))
-      localStorage.setItem('taskgarden_background_music_volume', volume.toString())
+      bgMusic.volume(this.backgroundMusicVolume * this.masterVolume)
     }
   }
 
@@ -529,28 +587,6 @@ export class SoundManager {
     
     if (xpAmount > 50) {
       setTimeout(() => this.playAchievement('streak_milestone'), 200)
-    }
-  }
-
-  enableDebugMode(enabled: boolean = true) {
-    this.debugMode = enabled
-    localStorage.setItem('taskgarden_sound_debug', enabled.toString())
-    
-    if (enabled) {
-      console.log('Sound debug mode enabled')
-      console.log('Available sounds:', Array.from(this.sounds.keys()))
-      console.log('Master volume:', this.masterVolume)
-      console.log('Audio enabled:', this.isEnabled)
-    }
-  }
-
-  getDebugInfo() {
-    return {
-      soundCount: this.sounds.size,
-      availableSounds: Array.from(this.sounds.keys()),
-      masterVolume: this.masterVolume,
-      audioEnabled: this.isEnabled,
-      debugMode: this.debugMode
     }
   }
 
@@ -567,5 +603,52 @@ export class SoundManager {
     if (stage && stage >= 3) {
       setTimeout(() => this.playPlant('stage_up'), 1200)
     }
+  }
+
+  // Enhanced audio control methods
+  getBackgroundMusicVolume(): number {
+    return this.backgroundMusicVolume
+  }
+
+  getSoundEffectsVolume(): number {
+    return this.soundEffectsVolume
+  }
+
+  setSoundEffectsVolume(volume: number) {
+    this.soundEffectsVolume = Math.max(0, Math.min(1, volume))
+    localStorage.setItem('taskgarden_sound_effects_volume', this.soundEffectsVolume.toString())
+  }
+
+  getIsBackgroundMusicEnabled(): boolean {
+    return this.isBackgroundMusicEnabled
+  }
+
+  setIsBackgroundMusicEnabled(enabled: boolean) {
+    this.isBackgroundMusicEnabled = enabled
+    localStorage.setItem('taskgarden_background_music_enabled', enabled.toString())
+    
+    if (!enabled) {
+      this.stopBackgroundMusic()
+    } else if (enabled && this.isEnabled) {
+      setTimeout(() => this.startBackgroundMusic(), 500)
+    }
+  }
+
+  getIsSoundEffectsEnabled(): boolean {
+    return this.isSoundEffectsEnabled
+  }
+
+  setIsSoundEffectsEnabled(enabled: boolean) {
+    this.isSoundEffectsEnabled = enabled
+    localStorage.setItem('taskgarden_sound_effects_enabled', enabled.toString())
+  }
+
+  getAudioVariationsEnabled(): boolean {
+    return this.audioVariationsEnabled
+  }
+
+  setAudioVariationsEnabled(enabled: boolean) {
+    this.audioVariationsEnabled = enabled
+    localStorage.setItem('taskgarden_audio_variations_enabled', enabled.toString())
   }
 }

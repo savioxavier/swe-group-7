@@ -81,5 +81,10 @@ export const convertApiPlantToLocal = (apiPlant: PlantResponse): Plant => ({
     current_streak: apiPlant.current_streak,
     task_level: apiPlant.task_level,
     task_status: ((apiPlant as PlantResponse & { task_status?: string }).task_status as Plant['task_status']) || 'active',
-    completion_date: (apiPlant as PlantResponse & { completion_date?: string }).completion_date ? new Date((apiPlant as PlantResponse & { completion_date?: string }).completion_date!) : undefined
+    completion_date: (apiPlant as PlantResponse & { completion_date?: string }).completion_date ? new Date((apiPlant as PlantResponse & { completion_date?: string }).completion_date!) : undefined,
+    // Multi-step task fields
+    is_multi_step: apiPlant.is_multi_step || false,
+    task_steps: apiPlant.task_steps || [],
+    completed_steps: apiPlant.completed_steps || 0,
+    total_steps: apiPlant.total_steps || 0
 })

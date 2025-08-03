@@ -41,11 +41,15 @@ export const TaskPanel: React.FC<TaskPanelProps> = ({
   }
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-hidden">
+    <div 
+      className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-hidden"
+      onClick={onClose}
+    >
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-white/10 backdrop-blur-md rounded-xl border border-white/20 w-full max-w-[95vw] sm:max-w-4xl h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Fixed Header */}
         <div className="p-4 sm:p-6 pb-4 border-b border-white/10">

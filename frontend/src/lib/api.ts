@@ -1,6 +1,7 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 import { LoginData, RegisterData, AuthResponse, RegistrationResponse, PlantCreate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse, AdminUser, SystemStats } from '../types'
+import type { TaskStepComplete, TaskStepPartial, PlantConvertToMultiStep } from '../types'
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -174,6 +175,18 @@ export const api = {
 
   async harvestUserTrophies(): Promise<{message: string, harvested_count: number}> {
     return this.post<{message: string, harvested_count: number}>('/plants/harvest/user')
+  },
+
+  async completeTaskStep(stepData: TaskStepComplete): Promise<{success: boolean, completed_steps: number, total_steps: number, new_growth_stage: number, experience_gained: number, task_completed: boolean}> {
+    return this.post<{success: boolean, completed_steps: number, total_steps: number, new_growth_stage: number, experience_gained: number, task_completed: boolean}>('/plants/steps/complete', stepData)
+  },
+
+  async updateTaskStepPartial(stepData: TaskStepPartial): Promise<{success: boolean, experience_gained: number, new_growth_level: number, hours_added: number}> {
+    return this.post<{success: boolean, experience_gained: number, new_growth_level: number, hours_added: number}>('/plants/steps/partial', stepData)
+  },
+
+  async convertToMultiStep(conversionData: PlantConvertToMultiStep): Promise<{success: boolean, message: string, total_steps: number}> {
+    return this.post<{success: boolean, message: string, total_steps: number}>('/plants/convert-to-multi-step', conversionData)
   },
 }
 

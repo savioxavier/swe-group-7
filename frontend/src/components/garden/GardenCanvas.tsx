@@ -7,7 +7,6 @@ interface GardenCanvasProps {
   plants: Plant[]
   selectedPlant: Plant | null
   hoveredPlant: Plant | null
-  mode: 'plant' | 'info' | 'tasks'
   mousePos: { x: number, y: number } | null
   onCanvasClick: (event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => void
   onCanvasMouseMove: (event: React.MouseEvent<HTMLCanvasElement>) => void
@@ -26,7 +25,6 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
   plants,
   selectedPlant,
   hoveredPlant,
-  mode,
   mousePos,
   onCanvasClick,
   onCanvasMouseMove,
@@ -133,8 +131,6 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
   }, [onLoadSprite])
 
   const drawPlantablePositions = useCallback((ctx: CanvasRenderingContext2D) => {
-    if (mode !== 'plant') return
-
     PLANTABLE_POSITIONS.forEach(position => {
       const isOccupied = plants.some(plant => plant.x === position.x && plant.y === position.y)
       if (!isOccupied) {
@@ -151,7 +147,7 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
         ctx.fillRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4)
       }
     })
-  }, [mode, plants])
+  }, [plants])
 
   const drawDirtAreas = useCallback(async (ctx: CanvasRenderingContext2D) => {
     try {
@@ -285,40 +281,18 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
         ctx.strokeRect(plant.x * CELL_SIZE + 1, plant.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2)
       }
 
-      // Hover highlight in info mode
-      if (hoveredPlant?.id === plant.id && mode === 'info') {
+      // Hover highlight
+      if (hoveredPlant?.id === plant.id) {
         ctx.strokeStyle = '#06b6d4'
         ctx.lineWidth = 2
         ctx.strokeRect(plant.x * CELL_SIZE + 1, plant.y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2)
       }
-
-      // Info overlay in info mode
-      if (mode === 'info' && (hoveredPlant?.id === plant.id || selectedPlant?.id === plant.id)) {
-        const cellX = plant.x * CELL_SIZE
-        const cellY = plant.y * CELL_SIZE
-        
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
-        ctx.fillRect(cellX, cellY, CELL_SIZE, CELL_SIZE)
-        
-        ctx.fillStyle = '#ffffff'
-        ctx.font = 'bold 10px Arial'
-        ctx.textAlign = 'center'
-        const plantNameOnly = plant.name.replace(/^(Exercise|Study|Work|Self-care|Creative)\\s+/i, '')
-        const shortName = plantNameOnly.length > 12 ? plantNameOnly.substring(0, 10) + '...' : plantNameOnly
-        ctx.fillText(shortName, cellX + CELL_SIZE/2, cellY + 15)
-        ctx.fillStyle = '#00ff88'
-        ctx.font = '9px Arial'
-        ctx.fillText(`${Math.floor((plant.stage / 5) * 100)}%`, cellX + CELL_SIZE/2, cellY + 30)
-        ctx.fillStyle = '#88ccff'
-        ctx.fillText(plant.type.toUpperCase(), cellX + CELL_SIZE/2, cellY + 45)
-        ctx.textAlign = 'left'
-      }
     })
-  }, [plants, selectedPlant, hoveredPlant, mode])
+  }, [plants, selectedPlant, hoveredPlant])
 
   const drawInteractionOverlays = useCallback((ctx: CanvasRenderingContext2D) => {
-    // Plant mode hover preview
-    if (mode === 'plant' && mousePos) {
+    // Hover preview for planting
+    if (mousePos) {
       const gridX = Math.floor(mousePos.x / CELL_SIZE)
       const gridY = Math.floor(mousePos.y / CELL_SIZE)
       
@@ -332,28 +306,7 @@ export const GardenCanvas: React.FC<GardenCanvasProps> = ({
         }
       }
     }
-
-    // Tasks mode hover overlay
-    if (mode === 'tasks' && hoveredPlant) {
-      const plantX = hoveredPlant.x * CELL_SIZE
-      const plantY = hoveredPlant.y * CELL_SIZE
-      
-      let overlayColor = '#3b82f6'
-      
-      if (hoveredPlant.decay_status === 'dead') {
-        overlayColor = '#dc2626'
-      } else if (hoveredPlant.decay_status === 'severely_wilted' || hoveredPlant.decay_status === 'wilted') {
-        overlayColor = '#f59e0b'
-      } else if (hoveredPlant.stage >= 5) {
-        overlayColor = '#8b5cf6'
-      }
-      
-      ctx.globalAlpha = 0.6
-      ctx.fillStyle = overlayColor
-      ctx.fillRect(plantX, plantY, CELL_SIZE, CELL_SIZE)
-      ctx.globalAlpha = 1
-    }
-  }, [mode, mousePos, hoveredPlant, plants])
+  }, [mousePos, plants])
 
   const drawGarden = useCallback(async () => {
     const canvas = canvasRef.current

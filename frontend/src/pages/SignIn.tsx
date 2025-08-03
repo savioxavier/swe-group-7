@@ -173,14 +173,7 @@ export default function SignIn() {
                     <span>Signing in...</span>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center space-x-2">
-                    <img 
-                      src="/assets/logo.png" 
-                      alt="TaskGarden Logo" 
-                      className="w-5 h-5 object-cover rounded"
-                    />
-                    <span>Enter Your Garden</span>
-                  </div>
+                  <span>Enter Your Garden</span>
                 )}
               </motion.button>
             </form>

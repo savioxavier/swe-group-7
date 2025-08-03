@@ -9,6 +9,7 @@ interface AuthContextType {
   register: (data: RegisterData) => Promise<void>
   logout: () => Promise<void>
   loading: boolean
+  isNewLogin: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -17,6 +18,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isNewLogin, setIsNewLogin] = useState(false)
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token')
@@ -67,9 +69,13 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     
     setToken(response.access_token)
     setUser(response.user)
+    setIsNewLogin(true) // Mark as new login
     localStorage.setItem('token', response.access_token)
     localStorage.setItem('user', JSON.stringify(response.user))
     localStorage.setItem('tokenExpiry', expiry.toString())
+    
+    // Reset isNewLogin after a short delay to allow components to react
+    setTimeout(() => setIsNewLogin(false), 1000)
   }
 
   const register = async (data: RegisterData) => {
@@ -91,6 +97,24 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     try {
       const currentToken = token
+      
+      // Perform auto-harvest and logout API calls BEFORE clearing token
+      if (currentToken) {
+        try {
+          await Promise.all([
+            api.harvestUserTrophies().catch(error => 
+              console.error('Auto-harvest failed during logout:', error)
+            ),
+            api.logout().catch(error => 
+              console.error('Backend logout failed:', error)
+            )
+          ])
+        } catch (error) {
+          console.error('Background logout cleanup failed:', error)
+        }
+      }
+      
+      // Clear token and user data AFTER API calls
       setToken(null)
       setUser(null)
       
@@ -100,19 +124,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('lastDailyPanelDate')
       const today = new Date().toDateString()
       localStorage.removeItem(`taskPanelSkipped_${today}`)
-      
-      if (currentToken) {
-        Promise.all([
-          api.harvestUserTrophies().catch(error => 
-            console.error('Auto-harvest failed during logout:', error)
-          ),
-          api.logout().catch(error => 
-            console.error('Backend logout failed:', error)
-          )
-        ]).catch(error => {
-          console.error('Background logout cleanup failed:', error)
-        })
-      }
     } catch (error) {
       console.error('Error during logout:', error)
       setToken(null)
@@ -133,6 +144,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     register,
     logout,
     loading,
+    isNewLogin,
   }
 
   return (

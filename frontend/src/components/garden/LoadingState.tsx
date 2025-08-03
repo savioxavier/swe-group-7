@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Leaf, Sprout, TreePine, Award, RefreshCw, Target, Zap } from 'lucide-react'
+import { Sprout, TreePine, Award, RefreshCw, Target, Zap } from 'lucide-react'
 
 const LOADING_MESSAGES = [
   "Growing your garden...",
@@ -25,14 +25,14 @@ const MOTIVATIONAL_QUOTES = [
 
 const getMessageIcon = (index: number) => {
   const icons = [
-    <Leaf className="w-5 h-5 text-green-500" />,
+    <Sprout className="w-5 h-5 text-green-500" />,
     <Sprout className="w-5 h-5 text-green-600" />,
     <TreePine className="w-5 h-5 text-green-700" />,
     <Zap className="w-5 h-5 text-yellow-500" />,
     <Award className="w-5 h-5 text-yellow-600" />,
     <RefreshCw className="w-5 h-5 text-blue-500" />,
     <Target className="w-5 h-5 text-purple-500" />,
-    <Leaf className="w-5 h-5 text-green-500" />
+    <Sprout className="w-5 h-5 text-green-500" />
   ]
   return icons[index] || icons[0]
 }

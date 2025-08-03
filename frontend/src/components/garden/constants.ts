@@ -1,3 +1,5 @@
+import type { TaskStep } from '../../types'
+
 // Garden configuration - optimized for all screen sizes
 export const GRID_WIDTH = 6
 export const GRID_HEIGHT = 5  
@@ -44,4 +46,8 @@ export interface Plant {
   completion_date?: Date
   animationStage?: number
   shouldGlow?: boolean
+  task_steps?: TaskStep[]
+  is_multi_step?: boolean
+  completed_steps?: number
+  total_steps?: number
 }
