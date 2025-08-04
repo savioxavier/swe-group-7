@@ -12,7 +12,7 @@ import {
   Heart,
   UserCheck,
 } from "lucide-react";
-import { UserProfile, Friendship } from "../../types/friend";
+import type { UserProfile, Friendship } from "../../types/friend";
 import { api } from "../../lib/api";
 import { toast } from "sonner";
 

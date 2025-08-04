@@ -1,7 +1,6 @@
-import React from "react";
 import { motion } from "framer-motion";
 import { Crown, Medal, Award, Flame, Trophy } from "lucide-react";
-import { LeaderboardEntry } from "../../types/friend";
+import type { LeaderboardEntry } from "../../types/friend";
 import { useAuth } from "../../contexts/AuthContext";
 
 interface LeaderboardTableProps {
