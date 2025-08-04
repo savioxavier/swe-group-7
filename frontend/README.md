@@ -288,12 +288,7 @@ pnpm lint
 
 - [Main Project README](../README.md)
 - [Backend Documentation](../backend/)
-- [Sound System Guide](../SOUND_EFFECTS_IMPLEMENTATION.md)
 
 ---
 
 Built with ❤️ by The Growth Hackers team
-    ...reactDom.configs.recommended.rules,
-  },
-})
-```
