@@ -109,14 +109,12 @@ export const GardenHeader: React.FC<GardenHeaderProps> = ({
             {/* Right Section - Actions */}
             <div className="flex items-center gap-2 flex-shrink-0">
               {/* Leaderboard */}
-              <div className="bg-white/10 backdrop-blur-sm border border-purple-400/30 rounded-lg text-center flex flex-col justify-center p-3.5">
-                <Link
-                  to="/leaderboard"
-                  className="text-sm font-bold text-white"
-                >
-                  <Users className="size-4 text-purple-400 mx-auto hover:text-purple-300" />
-                </Link>
-              </div>
+              <Link
+                to="/leaderboard"
+                className="bg-white/10 backdrop-blur-sm border border-green-400/30 rounded-lg text-center flex flex-col justify-center p-3.5 hover:bg-green-100/20 transition-colors min-h-[40px] min-w-[40px]"
+              >
+                <Users className="size-4 text-green-400 mx-auto" />
+              </Link>
 
               {/* Audio Settings */}
               <div className="relative">
