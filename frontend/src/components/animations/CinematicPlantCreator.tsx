@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Leaf, Sparkles, X, Briefcase, BookOpen, Dumbbell, Palette } from 'lucide-react'
+import { Sparkles, X, Briefcase, BookOpen, Dumbbell, Palette, Plus, Trash2, List, Sprout } from 'lucide-react'
+import { useSounds } from '../../lib/sounds'
+import type { TaskStep } from '../../types'
 
 interface CinematicPlantCreatorProps {
   isOpen: boolean
@@ -10,6 +12,8 @@ interface CinematicPlantCreatorProps {
     name: string
     description: string
     category: string
+    isMultiStep: boolean
+    taskSteps: TaskStep[]
   }) => void
 }
 
@@ -29,42 +33,158 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    category: ''
+    category: '',
+    isMultiStep: false,
+    taskSteps: [] as TaskStep[]
   })
   const [currentStep, setCurrentStep] = useState(0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [newStepTitle, setNewStepTitle] = useState('')
+  const sounds = useSounds()
+  const hasPlayedOpenSound = useRef(false)
 
   const formSteps = [
     { field: 'category', title: 'Choose Your Plant Type', type: 'category' },
     { field: 'name', title: 'Name Your Task', type: 'text', placeholder: 'e.g. "Daily Reading", "Morning Workout"' },
-    { field: 'description', title: 'Describe Your Goal', type: 'textarea', placeholder: 'What do you want to achieve?' }
+    { field: 'description', title: 'Describe Your Goal', type: 'textarea', placeholder: 'What do you want to achieve?' },
+    { field: 'taskType', title: 'Task Structure', type: 'task-type' },
+    { field: 'steps', title: 'Define Task Steps', type: 'steps', conditional: 'isMultiStep' }
   ]
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !hasPlayedOpenSound.current) {
       setCurrentStep(0)
-      setFormData({ name: '', description: '', category: '' })
+      setFormData({ 
+        name: '', 
+        description: '', 
+        category: '', 
+        isMultiStep: false, 
+        taskSteps: [] 
+      })
+      setNewStepTitle('')
       setIsSubmitting(false)
+      // Play modal open sound only once
+      sounds.play('ui_modal_open')
+      hasPlayedOpenSound.current = true
+    } else if (!isOpen) {
+      // Reset the flag when modal closes
+      hasPlayedOpenSound.current = false
     }
-  }, [isOpen])
+  }, [isOpen, sounds])
 
   const handleNext = () => {
-    if (currentStep < formSteps.length - 1) {
-      setCurrentStep(currentStep + 1)
+    sounds.play('ui_button')
+    
+    // Skip steps that shouldn't be shown
+    let nextStep = currentStep + 1
+    while (nextStep < formSteps.length) {
+      const step = formSteps[nextStep]
+      if (step.conditional === 'isMultiStep' && !formData.isMultiStep) {
+        nextStep++
+        continue
+      }
+      break
+    }
+    
+    if (nextStep < formSteps.length) {
+      setCurrentStep(nextStep)
+      sounds.play('ui_tab_switch')
     } else {
       handleSubmit()
     }
   }
 
+  const handlePrevious = () => {
+    sounds.play('ui_button')
+    
+    // Skip steps that shouldn't be shown when going back
+    let prevStep = currentStep - 1
+    while (prevStep >= 0) {
+      const step = formSteps[prevStep]
+      if (step.conditional === 'isMultiStep' && !formData.isMultiStep) {
+        prevStep--
+        continue
+      }
+      break
+    }
+    
+    if (prevStep >= 0) {
+      setCurrentStep(prevStep)
+      sounds.play('ui_tab_switch')
+    }
+  }
+
   const handleSubmit = async () => {
     setIsSubmitting(true)
+    sounds.play('ui_success')
     await new Promise(resolve => setTimeout(resolve, 800))
-    onCreatePlant(formData)
+    onCreatePlant({
+      name: formData.name,
+      description: formData.description,
+      category: formData.category,
+      isMultiStep: formData.isMultiStep,
+      taskSteps: formData.taskSteps
+    })
+    onClose()
+  }
+
+  // Generate a simple UUID v4
+  const generateUUID = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0
+      const v = c === 'x' ? r : (r & 0x3 | 0x8)
+      return v.toString(16)
+    })
+  }
+
+  const addTaskStep = () => {
+    if (newStepTitle.trim()) {
+      const newStep: TaskStep = {
+        id: generateUUID(), // Generate proper UUID
+        title: newStepTitle.trim(),
+        is_completed: false
+      }
+      setFormData(prev => ({
+        ...prev,
+        taskSteps: [...prev.taskSteps, newStep]
+      }))
+      setNewStepTitle('')
+      sounds.play('ui_success')
+    }
+  }
+
+  const removeTaskStep = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      taskSteps: prev.taskSteps.filter((_, i) => i !== index)
+    }))
+    sounds.play('ui_button')
+  }
+
+  const handleClose = () => {
+    sounds.play('ui_modal_close')
     onClose()
   }
 
   const currentStepData = formSteps[currentStep]
-  const isStepValid = formData[currentStepData.field as keyof typeof formData]?.trim() !== ''
+  
+  const getStepValidation = () => {
+    switch (currentStepData.type) {
+      case 'category':
+        return formData.category !== ''
+      case 'text':
+      case 'textarea':
+        return (formData[currentStepData.field as keyof Pick<typeof formData, 'name' | 'description' | 'category'>] as string)?.trim() !== ''
+      case 'task-type':
+        return true // Always valid, just selection
+      case 'steps':
+        return !formData.isMultiStep || formData.taskSteps.length > 0
+      default:
+        return true
+    }
+  }
+  
+  const isStepValid = getStepValidation()
 
   return (
     <AnimatePresence>
@@ -93,11 +213,11 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
             }}
             className="fixed inset-0 flex items-center justify-center z-50 p-4"
           >
-            <div className="w-full max-w-md bg-gradient-to-br from-green-700 via-green-600 to-emerald-600 rounded-2xl shadow-2xl border border-green-400/30">
+            <div className="w-full max-w-[90vw] sm:max-w-md bg-gradient-to-br from-green-700 via-green-600 to-emerald-600 rounded-2xl shadow-2xl border border-green-400/30">
               {/* Header */}
               <div className="relative p-6 text-center border-b border-green-400/20">
                 <button
-                  onClick={onClose}
+                  onClick={handleClose}
                   className="absolute top-4 right-4 text-green-200 hover:text-white transition-colors"
                 >
                   <X size={20} />
@@ -125,17 +245,24 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
                 
                 {/* Progress Indicator */}
                 <div className="flex justify-center space-x-2 mt-4">
-                  {formSteps.map((_, index) => (
-                    <motion.div
-                      key={index}
-                      className={`w-2 h-2 rounded-full transition-colors ${
-                        index <= currentStep ? 'bg-yellow-300' : 'bg-green-400/30'
-                      }`}
-                      animate={{
-                        scale: index === currentStep ? 1.2 : 1
-                      }}
-                    />
-                  ))}
+                  {formSteps.map((step, index) => {
+                    // Skip conditional steps that shouldn't be shown
+                    if (step.conditional === 'isMultiStep' && !formData.isMultiStep) {
+                      return null
+                    }
+                    
+                    return (
+                      <motion.div
+                        key={index}
+                        className={`w-2 h-2 rounded-full transition-colors ${
+                          index <= currentStep ? 'bg-yellow-300' : 'bg-green-400/30'
+                        }`}
+                        animate={{
+                          scale: index === currentStep ? 1.2 : 1
+                        }}
+                      />
+                    )
+                  })}
                 </div>
               </div>
 
@@ -156,7 +283,10 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
                             key={category.value}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            onClick={() => setFormData({ ...formData, category: category.value })}
+                            onClick={() => {
+                              sounds.play('ui_click')
+                              setFormData({ ...formData, category: category.value })
+                            }}
                             className={`p-4 rounded-xl border-2 transition-all ${
                               formData.category === category.value
                                 ? 'border-yellow-300 bg-yellow-300/20 text-white'
@@ -177,7 +307,7 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
                       <input
                         type="text"
                         placeholder={currentStepData.placeholder}
-                        value={formData[currentStepData.field as keyof typeof formData]}
+                        value={formData[currentStepData.field as keyof Pick<typeof formData, 'name'>] as string}
                         onChange={(e) => setFormData({ ...formData, [currentStepData.field]: e.target.value })}
                         className="w-full p-4 bg-green-800/30 border border-green-400/30 rounded-xl text-white placeholder-green-300 focus:border-yellow-300 focus:outline-none focus:ring-2 focus:ring-yellow-300/20"
                         autoFocus
@@ -187,11 +317,122 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
                     {currentStepData.type === 'textarea' && (
                       <textarea
                         placeholder={currentStepData.placeholder}
-                        value={formData[currentStepData.field as keyof typeof formData]}
+                        value={formData[currentStepData.field as keyof Pick<typeof formData, 'description'>] as string}
                         onChange={(e) => setFormData({ ...formData, [currentStepData.field]: e.target.value })}
                         className="w-full p-4 bg-green-800/30 border border-green-400/30 rounded-xl text-white placeholder-green-300 focus:border-yellow-300 focus:outline-none focus:ring-2 focus:ring-yellow-300/20 h-24 resize-none"
                         autoFocus
                       />
+                    )}
+
+                    {currentStepData.type === 'task-type' && (
+                      <div className="space-y-4">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => {
+                            sounds.play('ui_click')
+                            setFormData({ ...formData, isMultiStep: false, taskSteps: [] })
+                          }}
+                          className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                            !formData.isMultiStep
+                              ? 'border-yellow-300 bg-yellow-300/20 text-white'
+                              : 'border-green-400/30 bg-green-800/30 text-green-100 hover:border-green-300'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
+                              <Sprout className="w-5 h-5 text-blue-400" />
+                            </div>
+                            <div>
+                              <div className="font-semibold">Simple Task</div>
+                              <div className="text-sm opacity-80">One goal, track progress with work hours</div>
+                            </div>
+                          </div>
+                        </motion.button>
+
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => {
+                            sounds.play('ui_click')
+                            setFormData({ ...formData, isMultiStep: true })
+                          }}
+                          className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                            formData.isMultiStep
+                              ? 'border-yellow-300 bg-yellow-300/20 text-white'
+                              : 'border-green-400/30 bg-green-800/30 text-green-100 hover:border-green-300'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-purple-500/20 rounded-lg flex items-center justify-center">
+                              <List className="w-5 h-5 text-purple-400" />
+                            </div>
+                            <div>
+                              <div className="font-semibold">Multi-Step Task</div>
+                              <div className="text-sm opacity-80">Break down complex projects into steps</div>
+                            </div>
+                          </div>
+                        </motion.button>
+                      </div>
+                    )}
+
+                    {currentStepData.type === 'steps' && formData.isMultiStep && (
+                      <div className="space-y-4">
+                        <div className="flex items-center space-x-2 mb-4">
+                          <input
+                            type="text"
+                            placeholder="Add a step (e.g. 'Research topic', 'Write outline')"
+                            value={newStepTitle}
+                            onChange={(e) => setNewStepTitle(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && addTaskStep()}
+                            className="flex-1 p-3 bg-green-800/30 border border-green-400/30 rounded-lg text-white placeholder-green-300 focus:border-yellow-300 focus:outline-none focus:ring-2 focus:ring-yellow-300/20"
+                          />
+                          <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            onClick={addTaskStep}
+                            disabled={!newStepTitle.trim()}
+                            className="p-3 bg-yellow-300 text-green-800 rounded-lg hover:bg-yellow-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Plus size={16} />
+                          </motion.button>
+                        </div>
+
+                        {formData.taskSteps.length > 0 && (
+                          <div className="space-y-2 max-h-40 overflow-y-auto">
+                            {formData.taskSteps.map((step, index) => (
+                              <motion.div
+                                key={index}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex items-center space-x-3 p-3 bg-green-800/20 rounded-lg border border-green-400/20"
+                              >
+                                <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center text-white text-xs font-semibold">
+                                  {index + 1}
+                                </div>
+                                <div className="flex-1 text-white text-sm">
+                                  {step.title}
+                                </div>
+                                <motion.button
+                                  whileHover={{ scale: 1.1 }}
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={() => removeTaskStep(index)}
+                                  className="text-red-400 hover:text-red-300 transition-colors"
+                                >
+                                  <Trash2 size={14} />
+                                </motion.button>
+                              </motion.div>
+                            ))}
+                          </div>
+                        )}
+
+                        {formData.taskSteps.length === 0 && (
+                          <div className="text-center py-8 text-green-300 opacity-60">
+                            <List className="w-8 h-8 mx-auto mb-2" />
+                            <p>Add steps to break down your task</p>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </motion.div>
                 </AnimatePresence>
@@ -200,7 +441,7 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
               {/* Footer */}
               <div className="p-6 pt-0 flex justify-between">
                 <button
-                  onClick={() => currentStep > 0 ? setCurrentStep(currentStep - 1) : onClose()}
+                  onClick={() => currentStep > 0 ? handlePrevious() : onClose()}
                   className="px-4 py-2 text-green-200 hover:text-white transition-colors"
                 >
                   {currentStep > 0 ? 'Back' : 'Cancel'}
@@ -224,8 +465,16 @@ export const CinematicPlantCreator: React.FC<CinematicPlantCreatorProps> = ({
                     </>
                   ) : (
                     <>
-                      <span>{currentStep === formSteps.length - 1 ? 'Plant Seed' : 'Next'}</span>
-                      <Leaf size={16} />
+                      <span>
+                        {(() => {
+                          let finalStep = formSteps.length - 1
+                          if (formSteps[finalStep]?.conditional === 'isMultiStep' && !formData.isMultiStep) {
+                            finalStep--
+                          }
+                          return currentStep >= finalStep ? 'Plant Seed' : 'Next'
+                        })()}
+                      </span>
+                      <Sprout size={16} />
                     </>
                   )}
                 </motion.button>

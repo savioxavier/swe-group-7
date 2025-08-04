@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useSounds } from '../../lib/sounds'
 
 interface CinematicPlotFocusProps {
   isActive: boolean
@@ -26,6 +27,7 @@ export const CinematicPlotFocus: React.FC<CinematicPlotFocusProps> = ({
 }) => {
   const [animationPhase, setAnimationPhase] = useState<'idle' | 'focusing' | 'focused' | 'returning'>('idle')
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const sounds = useSounds()
   
   useEffect(() => {
     if (timeoutRef.current) {
@@ -34,14 +36,16 @@ export const CinematicPlotFocus: React.FC<CinematicPlotFocusProps> = ({
 
     if (isActive && focusPosition && animationPhase === 'idle') {
       setAnimationPhase('focusing')
+      // Play zoom-in sound when starting the focus animation
+      sounds.play('ui_zoom_in')
       timeoutRef.current = setTimeout(() => {
-        if (animationPhase === 'focusing') {
-          setAnimationPhase('focused')
-          onAnimationComplete()
-        }
+        setAnimationPhase('focused')
+        onAnimationComplete()
       }, 1000)
     } else if (!isActive && (animationPhase === 'focused' || animationPhase === 'focusing')) {
       setAnimationPhase('returning')
+      // Play zoom-out sound when starting the return animation
+      sounds.play('ui_zoom_out')
       timeoutRef.current = setTimeout(() => {
         setAnimationPhase('idle')
         if (onReturnComplete) {
@@ -55,7 +59,7 @@ export const CinematicPlotFocus: React.FC<CinematicPlotFocusProps> = ({
         clearTimeout(timeoutRef.current)
       }
     }
-  }, [isActive, focusPosition, animationPhase, onAnimationComplete, onReturnComplete])
+  }, [isActive, focusPosition, animationPhase, onAnimationComplete, onReturnComplete, sounds])
 
   useEffect(() => {
     return () => {

@@ -65,7 +65,23 @@ export const getPlantColor = (category: string): string => {
   return colors[category] || '#6b7280'
 }
 
-export const convertApiPlantToLocal = (apiPlant: PlantResponse): Plant => ({
+// Generate a simple UUID v4
+const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0
+    const v = c === 'x' ? r : (r & 0x3 | 0x8)
+    return v.toString(16)
+  })
+}
+
+export const convertApiPlantToLocal = (apiPlant: PlantResponse): Plant => {
+  // Fix task steps with null IDs by generating UUIDs
+  const fixedTaskSteps = apiPlant.task_steps?.map(step => ({
+    ...step,
+    id: step.id || generateUUID() // Generate UUID if missing
+  })) || []
+
+  return {
     id: apiPlant.id,
     name: apiPlant.name,
     task_description: (apiPlant as PlantResponse & { task_description?: string }).task_description,
@@ -81,5 +97,11 @@ export const convertApiPlantToLocal = (apiPlant: PlantResponse): Plant => ({
     current_streak: apiPlant.current_streak,
     task_level: apiPlant.task_level,
     task_status: ((apiPlant as PlantResponse & { task_status?: string }).task_status as Plant['task_status']) || 'active',
-    completion_date: (apiPlant as PlantResponse & { completion_date?: string }).completion_date ? new Date((apiPlant as PlantResponse & { completion_date?: string }).completion_date!) : undefined
-})
+    completion_date: (apiPlant as PlantResponse & { completion_date?: string }).completion_date ? new Date((apiPlant as PlantResponse & { completion_date?: string }).completion_date!) : undefined,
+    // Multi-step task fields
+    is_multi_step: apiPlant.is_multi_step || false,
+    task_steps: fixedTaskSteps,
+    completed_steps: apiPlant.completed_steps || 0,
+    total_steps: apiPlant.total_steps || 0
+  }
+}

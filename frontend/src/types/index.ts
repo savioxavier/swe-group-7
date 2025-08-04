@@ -30,18 +30,34 @@ export interface RegistrationResponse {
   requires_confirmation: boolean;
 }
 
+export interface TaskStep {
+  id?: string;
+  title: string;
+  description?: string;
+  is_completed: boolean;
+  is_partial?: boolean; // For partial completion tracking
+  completed_at?: string;
+  work_hours?: number; // Hours worked on this step
+}
+
 export interface PlantCreate {
   name: string;
+  task_description?: string;
   productivity_category: "work" | "study" | "exercise" | "creative";
   plant_sprite: string;
   position_x: number;
   position_y: number;
+  task_steps?: TaskStep[];
+  is_multi_step?: boolean;
 }
 
 export interface PlantResponse {
   id: string;
   user_id: string;
   name: string;
+  task_description?: string;
+  task_status?: "active" | "completed" | "harvested";
+  completion_date?: string;
   plant_type?: "exercise" | "study" | "work" | "selfcare" | "creative";
   productivity_category?: "work" | "study" | "exercise" | "creative";
   plant_sprite: string;
@@ -62,6 +78,10 @@ export interface PlantResponse {
   current_streak?: number;
   created_at: string;
   updated_at: string;
+  task_steps?: TaskStep[];
+  is_multi_step?: boolean;
+  completed_steps?: number;
+  total_steps?: number;
 }
 
 export interface TaskWorkCreate {
@@ -75,6 +95,10 @@ export interface TaskWorkResponse {
   user_id: string;
   hours_worked: number;
   experience_gained: number;
+  new_task_level?: number;
+  new_growth_level?: number;
+  current_streak?: number;
+  last_worked_date?: string;
   description?: string;
   created_at: string;
 }
@@ -112,6 +136,27 @@ export interface SystemStats {
   total_experience: number;
   avg_experience_per_user: number;
   last_updated: string;
+}
+
+export interface TaskStepComplete {
+  plant_id: string;
+  step_id: string;
+  hours_worked?: number;
+}
+
+export interface TaskStepPartial {
+  plant_id: string;
+  step_id: string;
+  hours_worked: number;
+  mark_partial?: boolean;
+}
+
+export interface PlantConvertToMultiStep {
+  plant_id: string;
+  task_steps: Array<{
+    title: string;
+    description?: string;
+  }>;
 }
 
 // Friend system types

@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.9",
+    "@types/howler": "^2.2.12",
     "@types/node": "^22.15.29",
     "clsx": "^2.1.1",
     "framer-motion": "^12.16.0",
+    "howler": "^2.2.4",
     "lucide-react": "^0.512.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

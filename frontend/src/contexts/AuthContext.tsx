@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import { api } from '../lib/api'
-import { User, LoginData, RegisterData } from '../types'
+import type { User, LoginData, RegisterData } from '../types'
 
 interface AuthContextType {
   user: User | null
@@ -9,6 +9,7 @@ interface AuthContextType {
   register: (data: RegisterData) => Promise<void>
   logout: () => Promise<void>
   loading: boolean
+  isNewLogin: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -17,6 +18,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isNewLogin, setIsNewLogin] = useState(false)
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token')
@@ -67,9 +69,13 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     
     setToken(response.access_token)
     setUser(response.user)
+    setIsNewLogin(true) // Mark as new login
     localStorage.setItem('token', response.access_token)
     localStorage.setItem('user', JSON.stringify(response.user))
     localStorage.setItem('tokenExpiry', expiry.toString())
+    
+    // Reset isNewLogin after a short delay to allow components to react
+    setTimeout(() => setIsNewLogin(false), 1000)
   }
 
   const register = async (data: RegisterData) => {
@@ -90,30 +96,38 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      // Auto-harvest completed trophy plants before logout
-      try {
-        await api.harvestUserTrophies()
-      } catch (harvestError) {
-        // Don't fail logout if harvest fails
-        console.error('Auto-harvest failed during logout:', harvestError)
+      const currentToken = token
+      
+      // Perform auto-harvest and logout API calls BEFORE clearing token
+      if (currentToken) {
+        try {
+          await Promise.all([
+            api.harvestUserTrophies().catch(error => 
+              console.error('Auto-harvest failed during logout:', error)
+            ),
+            api.logout().catch(error => 
+              console.error('Backend logout failed:', error)
+            )
+          ])
+        } catch (error) {
+          console.error('Background logout cleanup failed:', error)
+        }
       }
       
-      // Call the backend logout endpoint 
-      await api.logout()
+      // Clear token and user data AFTER API calls
+      setToken(null)
+      setUser(null)
+      
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      localStorage.removeItem('tokenExpiry')
     } catch (error) {
-      console.error('🚪 Error during logout:', error)
-      // Continue with local logout even if backend call fails
-    } finally {
-      // Always clear local storage
+      console.error('Error during logout:', error)
       setToken(null)
       setUser(null)
       localStorage.removeItem('token')
       localStorage.removeItem('user')
       localStorage.removeItem('tokenExpiry')
-      // Clear daily panel states for next login
-      localStorage.removeItem('lastDailyPanelDate')
-      const today = new Date().toDateString()
-      localStorage.removeItem(`taskPanelSkipped_${today}`)
     }
   }
 
@@ -124,6 +138,7 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     register,
     logout,
     loading,
+    isNewLogin,
   }
 
   return (

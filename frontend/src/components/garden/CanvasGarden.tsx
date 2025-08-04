@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Plus, Info, BarChart3, X } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { api } from '../../lib/api'
-import type { PlantCreate, UserProgressResponse } from '../../types'
+import { useSounds } from '../../lib/sounds'
+import type { PlantCreate, UserProgressResponse, TaskStep } from '../../types'
 import { CinematicPlotFocus } from '../animations/CinematicPlotFocus'
 import { CinematicPlantCreator } from '../animations/CinematicPlantCreator'
 import { PlantGrowthEffects } from '../animations/PlantGrowthEffects'
@@ -14,10 +16,12 @@ import {
   GardenCanvas,
   GardenHeader,
   PlantDetailsModal,
+  PlantManagementModal,
   WorkDialog,
   TrophyDialog,
   SuccessMessage,
   TaskPanel,
+  LoadingState,
   GRID_WIDTH,
   GRID_HEIGHT,
   CELL_SIZE,
@@ -29,14 +33,13 @@ import {
 import type { Plant } from './'
 
 export default function CanvasGarden() {
-  const { user, logout, token } = useAuth()
+  const { user, logout, token, isNewLogin } = useAuth()
+  const sounds = useSounds()
   
-  // Plant and UI state
   const [plants, setPlants] = useState<Plant[]>([])
   const [loading, setLoading] = useState(true)
   const [userProgress, setUserProgress] = useState<UserProgressResponse | null>(null)
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null)
-  const [mode, setMode] = useState<'plant' | 'info' | 'tasks'>('plant')
   const [mousePos, setMousePos] = useState<{x: number, y: number} | null>(null)
   const [hoveredPlant, setHoveredPlant] = useState<Plant | null>(null)
   
@@ -46,15 +49,22 @@ export default function CanvasGarden() {
   const [showWorkDialog, setShowWorkDialog] = useState(false)
   const [showTrophyDialog, setShowTrophyDialog] = useState(false)
   const [showTaskPanel, setShowTaskPanel] = useState(false)
-  
-  // Check if any blocking modal is open to pause animations
-  // Note: Task panel is not blocking, it's just a side display
-  const isBlockingModalOpen = showPlantCreator || showWorkDialog || showTrophyDialog || (mode === 'info' && selectedPlant !== null)
+  const [showAudioSettings, setShowAudioSettings] = useState(false)
   
   // Task panel states
-  const [hasShownDailyPanel, setHasShownDailyPanel] = useState(false)
   const [shouldAutoShowTasks, setShouldAutoShowTasks] = useState(false)
   const [focusedPlantId, setFocusedPlantId] = useState<string | null>(null)
+  const [taskPanelClosedThisSession, setTaskPanelClosedThisSession] = useState(false)
+  
+  // Daily decay tracking
+  const [dailyDecayInfo, setDailyDecayInfo] = useState<{
+    decay_applied?: number;
+    level?: number;
+    streak?: number;
+    base_decay?: number;
+    streak_protection?: number;
+    message?: string;
+  } | null>(null)
   
   // Success message states
   const [submissionMessage, setSubmissionMessage] = useState('')
@@ -62,6 +72,30 @@ export default function CanvasGarden() {
   
   // Sprite loading
   const [loadedSprites, setLoadedSprites] = useState<Map<string, HTMLImageElement>>(new Map())
+  const [plantContextMenu, setPlantContextMenu] = useState<{plant: Plant, x: number, y: number} | null>(null)
+  const [showPlantDetails, setShowPlantDetails] = useState(false)
+  const [showPlantManagement, setShowPlantManagement] = useState(false)
+
+  const isBlockingModalOpen = showPlantCreator || showWorkDialog || showTrophyDialog
+
+  // Helper function to close all modals except the specified one
+  const closeAllModalsExcept = (keepOpen: string[] = []) => {
+    if (!keepOpen.includes('taskPanel')) setShowTaskPanel(false)
+    if (!keepOpen.includes('audioSettings')) setShowAudioSettings(false)
+    if (!keepOpen.includes('plantDetails')) setShowPlantDetails(false)
+    if (!keepOpen.includes('plantManagement')) setShowPlantManagement(false)
+    if (!keepOpen.includes('plantContextMenu')) setPlantContextMenu(null)
+  }
+
+  // Audio settings toggle function
+  const toggleAudioSettings = () => {
+    if (showAudioSettings) {
+      setShowAudioSettings(false)
+    } else {
+      closeAllModalsExcept(['audioSettings'])
+      setShowAudioSettings(true)
+    }
+  }
 
   // Cinematic planting system
   const {
@@ -112,36 +146,40 @@ export default function CanvasGarden() {
     })
   }, [loadedSprites])
 
-  // Canvas event handlers
   const handleCanvasMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget
     const rect = canvas.getBoundingClientRect()
-    const x = event.clientX - rect.left
-    const y = event.clientY - rect.top
+    
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    const x = (event.clientX - rect.left) * scaleX
+    const y = (event.clientY - rect.top) * scaleY
 
-    if (mode === 'plant') {
-      setMousePos({ x, y })
-    }
+    // Always show mouse position for visual feedback
+    setMousePos({ x, y })
 
-    if (mode === 'info' || mode === 'tasks') {
-      const gridX = Math.floor(x / CELL_SIZE)
-      const gridY = Math.floor(y / CELL_SIZE)
-      const hoveredPlant = plants.find(p => p.x === gridX && p.y === gridY)
-      setHoveredPlant(hoveredPlant || null)
-    }
+    // Check for hovered plants
+    const gridX = Math.floor(x / CELL_SIZE)
+    const gridY = Math.floor(y / CELL_SIZE)
+    const hoveredPlant = plants.find(p => p.x === gridX && p.y === gridY)
+    setHoveredPlant(hoveredPlant || null)
   }
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = event.currentTarget
     const rect = canvas.getBoundingClientRect()
+    
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    
     let x: number, y: number
     
     if ('touches' in event && event.touches.length > 0) {
-      x = event.touches[0].clientX - rect.left
-      y = event.touches[0].clientY - rect.top
+      x = (event.touches[0].clientX - rect.left) * scaleX
+      y = (event.touches[0].clientY - rect.top) * scaleY
     } else if ('clientX' in event) {
-      x = event.clientX - rect.left
-      y = event.clientY - rect.top
+      x = (event.clientX - rect.left) * scaleX
+      y = (event.clientY - rect.top) * scaleY
     } else {
       return
     }
@@ -152,43 +190,125 @@ export default function CanvasGarden() {
     if (gridX >= 0 && gridX < GRID_WIDTH && gridY >= 0 && gridY < GRID_HEIGHT) {
       const clickedPlant = plants.find(p => p.x === gridX && p.y === gridY)
 
-      if (mode === 'plant') {
-        if (clickedPlant) {
-          setSelectedPlant(clickedPlant)
-        } else {
-          setSelectedPlant(null)
-          if (isPositionPlantable(gridX, gridY)) {
-            startCinematicPlanting({ x: gridX, y: gridY })
-          }
-        }
-      } else if (mode === 'info') {
-        setSelectedPlant(clickedPlant || null)
-      } else if (mode === 'tasks' && clickedPlant) {
+      if (clickedPlant) {
+        // Plant exists - show context menu with all available actions
+        sounds.playPlant('click')
+        
         setSelectedPlant(clickedPlant)
-        if (clickedPlant.stage >= 5) {
-          setShowTrophyDialog(true)
-        } else {
-          setShowWorkDialog(true)
+        closeAllModalsExcept(['plantContextMenu']) // Close all modals except context menu
+        
+        setPlants(prevPlants => 
+          prevPlants.map(plant => 
+            plant.id === clickedPlant.id 
+              ? { ...plant, shouldGlow: true }
+              : plant
+          )
+        )
+        
+        setTimeout(() => {
+          setPlants(prevPlants => 
+            prevPlants.map(plant => 
+              plant.id === clickedPlant.id 
+                ? { ...plant, shouldGlow: false }
+                : plant
+            )
+          )
+        }, 600)
+
+        // Show context menu with all options
+        setPlantContextMenu({
+          plant: clickedPlant,
+          x: gridX * CELL_SIZE + CELL_SIZE / 2,
+          y: gridY * CELL_SIZE + CELL_SIZE / 2
+        })
+      } else {
+        // Empty space - planting
+        setSelectedPlant(null)
+        closeAllModalsExcept() // Close all modals when clicking on empty space
+        if (isPositionPlantable(gridX, gridY)) {
+          sounds.playUI('click')
+          showSuccessMsg('Perfect spot for a new plant!')
+          startCinematicPlanting({ x: gridX, y: gridY })
         }
       }
-    } else if (mode === 'plant') {
+    } else {
       setSelectedPlant(null)
+      closeAllModalsExcept() // Close all modals when clicking outside grid
     }
   }
 
-  // Mode change handlers
-  const handleModeChange = (newMode: 'plant' | 'info' | 'tasks') => {
-    setMode(newMode)
+  // Plant management functions
+  const deletePlant = async (plantId: string) => {
+    try {
+      await api.deletePlant(plantId)
+      setPlants(prevPlants => prevPlants.filter(p => p.id !== plantId))
+      showSuccessMsg('Plant deleted successfully')
+    } catch (error) {
+      console.error('Failed to delete plant:', error)
+      showSuccessMsg('Failed to delete plant')
+    }
+  }
+
+  const renamePlant = async (plantId: string, newName: string) => {
+    try {
+      setPlants(prevPlants => 
+        prevPlants.map(p => 
+          p.id === plantId 
+            ? { ...p, name: newName }
+            : p
+        )
+      )
+      showSuccessMsg(`Plant renamed to "${newName}" (local only)`)
+    } catch (error) {
+      console.error('Failed to rename plant:', error)
+      showSuccessMsg('Failed to rename plant')
+    }
+  }
+
+  // Plant context menu actions
+  const handlePlantAction = (action: 'info' | 'tasks' | 'manage' | 'harvest', plant: Plant) => {
+    setPlantContextMenu(null)
+    setFocusedPlantId(plant.id)
     
-    if (newMode === 'plant') {
-      setHoveredPlant(null)
-    } else if (newMode === 'info') {
-      setMousePos(null)
-    } else if (newMode === 'tasks') {
-      setMousePos(null)
-      setHoveredPlant(null)
-      setSelectedPlant(null)
-      setShowWorkDialog(false)
+    switch (action) {
+      case 'info': {
+        // Show detailed plant info modal (PlantDetailsModal)
+        setSelectedPlant(plant)
+        closeAllModalsExcept(['plantDetails'])
+        setShowPlantDetails(true)
+        setPlantContextMenu(null) // Close context menu
+        showSuccessMsg(`Viewing ${plant.name} analytics and details`)
+        break
+      }
+        
+      case 'tasks':
+        // Dynamic: Log work hours OR harvest if mature
+        setPlantContextMenu(null) // Close context menu
+        if (plant.stage >= 5) {
+          // Plant is ready to harvest
+          setShowTrophyDialog(true)
+          showSuccessMsg(`Harvesting ${plant.name}!`)
+        } else {
+          // Plant needs more work - show work dialog
+          setShowWorkDialog(true)
+          showSuccessMsg(`How many hours did you work on ${plant.name}?`)
+        }
+        break
+        
+      case 'manage':
+        // Plant management - show management modal
+        setSelectedPlant(plant)
+        closeAllModalsExcept(['plantManagement'])
+        setShowPlantManagement(true)
+        setPlantContextMenu(null) // Close context menu
+        showSuccessMsg(`Managing ${plant.name}`)
+        break
+        
+      case 'harvest':
+        // Force harvest (for mature plants)
+        setShowTrophyDialog(true)
+        showSuccessMsg(`Harvesting ${plant.name}!`)
+        break
     }
   }
 
@@ -205,21 +325,36 @@ export default function CanvasGarden() {
 
   const loadPlants = useCallback(async () => {
     if (!token) return
-    try {
-      setLoading(true)
-      const apiPlants = await api.getPlants()
-      const localPlants = apiPlants.map(convertApiPlantToLocal)
-      setPlants(localPlants)
-    } catch (error) {
-      console.error('Failed to load plants:', error)
-    } finally {
-      setLoading(false)
-    }
+    
+    setLoading(true)
+    
+    const skeletonPlants: Plant[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `skeleton-${i}`,
+      name: 'Loading...',
+      task_description: 'Loading your plants...',
+      type: 'work' as const,
+      x: i % GRID_WIDTH,
+      y: Math.floor(i / GRID_WIDTH) + 1,
+      stage: 0,
+      experience_points: 0,
+      growth_level: 0,
+      lastWatered: new Date(),
+      plantSprite: 'carrot',
+      decay_status: 'healthy' as const,
+      current_streak: 0,
+      task_level: 1,
+      task_status: 'active' as const,
+      shouldGlow: true
+    }))
+    setPlants(skeletonPlants)
+    
+    const apiPlants = await api.getPlants()
+    const localPlants = apiPlants.map(convertApiPlantToLocal)
+    setPlants(localPlants)
+    setLoading(false)
   }, [token])
 
-  // Plant glow management (canvas-based)
   const startPlantGlow = (plantId: string) => {
-    // Set shouldGlow to true for the plant
     setPlants(prevPlants => 
       prevPlants.map(plant => 
         plant.id === plantId 
@@ -228,7 +363,6 @@ export default function CanvasGarden() {
       )
     )
     
-    // Remove glow after 5 seconds to match the circling dots
     setTimeout(() => {
       setPlants(prevPlants => 
         prevPlants.map(plant => 
@@ -241,80 +375,398 @@ export default function CanvasGarden() {
   }
 
   const logWork = async (plantId: string, hours: number) => {
+    const plantBefore = plants.find(p => p.id === plantId)
+    const stageBefore = plantBefore?.stage || 0
+    
+    const xpGained = hours * 100
+    sounds.playPlant('water')
+    
+    setPlants(prevPlants => 
+      prevPlants.map(plant => {
+        if (plant.id === plantId) {
+          const newXP = plant.experience_points + xpGained
+          const newStage = Math.min(5, Math.floor(newXP / 100))
+          return { 
+            ...plant, 
+            experience_points: newXP, 
+            stage: newStage,
+            shouldGlow: true
+          }
+        }
+        return plant
+      })
+    )
+    
+    triggerXPAnimation(plantId, xpGained)
+    sounds.playXPGainSequence(xpGained)
+    if (plantBefore?.is_multi_step) {
+      setSubmissionMessage(`Time logged! +${xpGained} XP gained. Use "Complete Step" to mark steps as done.`)
+    } else {
+      setSubmissionMessage(`Great work! +${xpGained} XP gained!`)
+    }
+    setShowSuccessMessage(true)
+    
     try {
-      const plantBefore = plants.find(p => p.id === plantId)
-      const stageBefore = plantBefore?.stage || 0
-      
-      await api.logTaskWork({
+      const workResult = await api.logTaskWork({
         plant_id: plantId,
         hours_worked: hours
       })
       
-      const xpGained = hours * 100
-      triggerXPAnimation(plantId, xpGained)
+      setPlants(prevPlants => 
+        prevPlants.map(plant => {
+          if (plant.id === plantId) {
+            return {
+              ...plant,
+              experience_points: workResult.new_growth_level ? (workResult.new_growth_level / 20) * 100 : plant.experience_points,
+              stage: workResult.new_task_level || plant.stage,
+              growth_level: workResult.new_growth_level || plant.growth_level,
+              current_streak: workResult.current_streak || plant.current_streak,
+              shouldGlow: false
+            }
+          }
+          return plant
+        })
+      )
       
-      const apiPlants = await api.getPlants()
-      const updatedPlants = apiPlants.map(convertApiPlantToLocal)
-      setPlants(updatedPlants)
+      const stageAfter = workResult.new_task_level || stageBefore
       
-      const plantAfter = updatedPlants.find(p => p.id === plantId)
-      const stageAfter = plantAfter?.stage || 0
-      
-      // Close work dialog first
-      setShowWorkDialog(false)
-      
-      if (plantAfter && stageAfter > stageBefore) {
-        const plant = updatedPlants.find(p => p.id === plantId)
-        if (plant) {
-          triggerGrowthAnimation(plantId, stageBefore, stageAfter, { x: plant.x, y: plant.y })
-          
-          // Trigger canvas glow after a delay
+      if (stageAfter > stageBefore) {
+        const plantAfter = plants.find(p => p.id === plantId)
+        if (plantAfter) {
+          triggerGrowthAnimation(plantId, stageBefore, stageAfter, { x: plantAfter.x, y: plantAfter.y })
+          sounds.playGrowthSequence(stageAfter)
           setTimeout(() => {
-            // Canvas-based golden glow
             startPlantGlow(plantId)
-            // Deselect everything when glow animation starts
-            setSelectedPlant(null)
-            setShowWorkDialog(false)
-            setShowTrophyDialog(false)
-          }, 2800) // Start glow after growth animation mostly completes
+          }, 2800)
         }
       }
+      loadUserProgress()
       
     } catch (error) {
       console.error('Failed to log work:', error)
-      alert('Failed to log work. Please try again.')
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId ? { ...plant, shouldGlow: false } : plant
+        )
+      )
+      setSubmissionMessage('Failed to save work. Please try again.')
+      setShowSuccessMessage(true)
     }
   }
 
   const completeTask = async (plantId: string) => {
     try {
+      // Play task completion sound immediately
+      sounds.playAchievement('task_complete')
+      
+      // Optimistic update - mark as completed immediately
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId 
+            ? { ...plant, task_status: 'completed', shouldGlow: true }
+            : plant
+        )
+      )
+      
+      // Background API call
       await api.completeTask(plantId)
-      await loadPlants()
+      
+      // Update with real data and remove glow
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId 
+            ? { ...plant, task_status: 'completed', shouldGlow: false }
+            : plant
+        )
+      )
+      
+      // Show success message with additional sound
+      setSubmissionMessage('Task completed! It will be auto-harvested in 6 hours.')
+      setShowSuccessMessage(true)
+      sounds.playUI('success')
+      
     } catch (error) {
       console.error('Failed to complete task:', error)
+      
+      // Revert optimistic update on error
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId 
+            ? { ...plant, shouldGlow: false } // Revert to original state
+            : plant
+        )
+      )
+      
       // Don't show alert for already completed tasks, just log it
       if (error instanceof Error && error.message.includes('already completed')) {
-        // Task was already completed, silently continue
+        setSubmissionMessage('Task was already completed!')
+        setShowSuccessMessage(true)
       } else {
-        alert('Failed to complete task. Please try again.')
+        setSubmissionMessage('Failed to complete task. Please try again.')
+        setShowSuccessMessage(true)
       }
     }
   }
 
-  const createPlant = async (plantData: { name: string, description: string, category: string }) => {
+  const completeTaskStep = async (plantId: string, stepId: string, hours?: number) => {
+    const plantBefore = plants.find(p => p.id === plantId)
+    const stageBefore = plantBefore?.stage || 0
+    
+    sounds.playAchievement('achievement')
+    
+    setPlants(prevPlants => 
+      prevPlants.map(plant => {
+        if (plant.id === plantId && plant.task_steps) {
+          const updatedSteps = plant.task_steps.map(step => 
+            step.id === stepId 
+              ? { ...step, is_completed: true, completed_at: new Date().toISOString() }
+              : step
+          )
+          const completedSteps = updatedSteps.filter(s => s.is_completed).length
+          const totalSteps = plant.total_steps || updatedSteps.length
+          const newStage = Math.min(5, completedSteps)
+          const isTaskCompleted = completedSteps === totalSteps
+          
+          return { 
+            ...plant, 
+            task_steps: updatedSteps,
+            completed_steps: completedSteps,
+            total_steps: totalSteps,
+            stage: newStage,
+            shouldGlow: true,
+            task_status: isTaskCompleted ? 'completed' : plant.task_status,
+            completion_date: isTaskCompleted ? new Date() : plant.completion_date
+          }
+        }
+        return plant
+      })
+    )
+    
+    try {
+      const stepResult = await api.completeTaskStep({
+        plant_id: plantId,
+        step_id: stepId,
+        hours_worked: hours
+      })
+        
+        // Always just update the plant state - don't reload unless necessary
+        setPlants(prevPlants => 
+          prevPlants.map(plant => {
+            if (plant.id === plantId) {
+              const updatedPlant = {
+                ...plant,
+                stage: stepResult.new_growth_stage,
+                experience_points: plant.experience_points + stepResult.experience_gained,
+                shouldGlow: false,
+                completed_steps: stepResult.completed_steps,
+                total_steps: stepResult.total_steps,
+                task_status: stepResult.task_completed ? 'completed' : plant.task_status,
+                completion_date: stepResult.task_completed ? new Date() : plant.completion_date
+              }
+              return updatedPlant
+            }
+            return plant
+          })
+        )
+        
+        // Trigger XP animation
+        triggerXPAnimation(plantId, stepResult.experience_gained)
+        sounds.playXPGainSequence(stepResult.experience_gained)
+        
+        // Check for growth animation
+        const stageAfter = stepResult.new_growth_stage
+        if (stageAfter > stageBefore) {
+          const plantAfter = plants.find(p => p.id === plantId)
+          if (plantAfter) {
+            triggerGrowthAnimation(plantId, stageBefore, stageAfter, { x: plantAfter.x, y: plantAfter.y })
+            sounds.playGrowthSequence(stageAfter)
+            setTimeout(() => startPlantGlow(plantId), 2800)
+          }
+        }
+        
+        // Show completion message
+        if (stepResult.task_completed) {
+          setSubmissionMessage('All steps completed! Task finished!')
+          sounds.playAchievement('task_complete')
+          
+          // Trigger trophy dialog after a short delay
+          setTimeout(() => {
+            const completedPlant = plants.find(p => p.id === plantId && p.task_status === 'completed')
+            if (completedPlant) {
+              setSelectedPlant(completedPlant)
+              setShowTrophyDialog(true)
+            }
+          }, 2000)
+        } else {
+          setSubmissionMessage(`Step completed! ${stepResult.completed_steps}/${stepResult.total_steps} done`)
+        }
+        setShowSuccessMessage(true)
+        
+        loadUserProgress()
+        
+      } catch (error) {
+        console.error('Failed to complete step:', error)
+        // Revert optimistic update
+        setPlants(prevPlants => 
+          prevPlants.map(plant => 
+            plant.id === plantId ? { ...plant, shouldGlow: false } : plant
+          )
+        )
+        setSubmissionMessage('Failed to complete step. Please try again.')
+        setShowSuccessMessage(true)
+      }
+  }
+
+  const updateTaskStepPartial = async (plantId: string, stepId: string, hours: number) => {
+    sounds.playPlant('water')
+    
+    setPlants(prevPlants => 
+      prevPlants.map(plant => {
+        if (plant.id === plantId && plant.task_steps) {
+          const updatedSteps = plant.task_steps.map(step => 
+            step.id === stepId 
+              ? { 
+                  ...step, 
+                  is_partial: true, 
+                  work_hours: (step.work_hours || 0) + hours 
+                }
+              : step
+          )
+          
+          return { 
+            ...plant, 
+            task_steps: updatedSteps,
+            shouldGlow: true
+          }
+        }
+        return plant
+      })
+    )
+    
+    try {
+      const partialResult = await api.updateTaskStepPartial({
+        plant_id: plantId,
+        step_id: stepId,
+        hours_worked: hours,
+        mark_partial: true
+      })
+      
+      setPlants(prevPlants => 
+        prevPlants.map(plant => {
+          if (plant.id === plantId) {
+            return {
+              ...plant,
+              experience_points: plant.experience_points + partialResult.experience_gained,
+              growth_level: partialResult.new_growth_level,
+              shouldGlow: false
+            }
+          }
+          return plant
+        })
+      )
+      
+      triggerXPAnimation(plantId, partialResult.experience_gained)
+      sounds.playXPGainSequence(partialResult.experience_gained)
+      
+      setSubmissionMessage(`Progress added! +${partialResult.experience_gained} XP, ${hours}h logged`)
+      setShowSuccessMessage(true)
+      loadUserProgress()
+      
+    } catch (error) {
+      console.error('Failed to log partial work:', error)
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId ? { ...plant, shouldGlow: false } : plant
+        )
+      )
+      setSubmissionMessage('Failed to log progress. Please try again.')
+      setShowSuccessMessage(true)
+    }
+  }
+
+  const convertToMultiStep = async (plantId: string, steps: Array<{title: string, description?: string}>) => {
+    try {
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId 
+            ? { 
+                ...plant, 
+                is_multi_step: true,
+                task_steps: steps.map((step, index) => ({
+                  id: `temp-${index}`,
+                  title: step.title,
+                  description: step.description || '',
+                  is_completed: false,
+                  is_partial: false,
+                  work_hours: 0
+                })),
+                total_steps: steps.length,
+                completed_steps: 0,
+                shouldGlow: true
+              }
+            : plant
+        )
+      )
+
+      const result = await api.convertToMultiStep({
+        plant_id: plantId,
+        task_steps: steps
+      })
+
+      setSubmissionMessage(`Task converted! Now has ${result.total_steps} steps to complete.`)
+      setShowSuccessMessage(true)
+      sounds.playUI('success')
+
+      setTimeout(() => {
+        setPlants(prevPlants => 
+          prevPlants.map(plant => 
+            plant.id === plantId ? { ...plant, shouldGlow: false } : plant
+          )
+        )
+        loadPlants()
+      }, 1000)
+
+    } catch (error) {
+      console.error('Failed to convert to multi-step:', error)
+      
+      setPlants(prevPlants => 
+        prevPlants.map(plant => 
+          plant.id === plantId ? { ...plant, shouldGlow: false } : plant
+        )
+      )
+      
+      setSubmissionMessage('Failed to convert task. Please try again.')
+      setShowSuccessMessage(true)
+    }
+  }
+
+  const createPlant = async (plantData: { 
+    name: string, 
+    description: string, 
+    category: string,
+    isMultiStep: boolean,
+    taskSteps: TaskStep[]
+  }) => {
     if (pendingPlantPosition) {
       try {
         const selectedSprite = getRandomPlantForCategory(plantData.category)
         const apiPlantData: PlantCreate = {
           name: plantData.name.trim(),
+          task_description: plantData.description.trim() || undefined,
           productivity_category: plantData.category as 'work' | 'study' | 'exercise' | 'creative',
           plant_sprite: selectedSprite,
           position_x: pendingPlantPosition.x,
-          position_y: pendingPlantPosition.y
+          position_y: pendingPlantPosition.y,
+          is_multi_step: plantData.isMultiStep,
+          task_steps: plantData.isMultiStep ? plantData.taskSteps : undefined
         }
+        
         const apiPlant = await api.createPlant(apiPlantData)
         const newPlant = convertApiPlantToLocal(apiPlant)
         setPlants([...plants, newPlant])
+        
+        // Play plant creation sound
+        sounds.playPlant('create')
         
         setShowPlantCreator(false)
         startReturnAnimation()
@@ -361,45 +813,40 @@ export default function CanvasGarden() {
     }, 3000)
   }
 
-  // Daily task panel logic
-  const shouldShowDailyTasks = useCallback(() => {
+  // Daily task panel logic - show on every meaningful login session
+  const shouldShowDailyTasks = useCallback(async () => {
     if (!user) return false
     
-    const today = new Date().toDateString()
-    const skippedToday = localStorage.getItem(`taskPanelSkipped_${today}`)
-    if (skippedToday) return false
-    
-    // Reset hasShownDailyPanel for new days
-    const lastShownDate = localStorage.getItem('lastDailyPanelDate')
-    if (lastShownDate !== today) {
-      setHasShownDailyPanel(false)
-      localStorage.setItem('lastDailyPanelDate', today)
-    }
-    
-    if (hasShownDailyPanel && lastShownDate === today) return false
+    // Don't show if user manually closed it this session
+    if (taskPanelClosedThisSession) return false
     
     // Check if user has any active plants
     if (plants.length === 0) return false
     
-    // Show daily tasks if user hasn't worked in the last 2 hours
-    // This allows the panel to show multiple times per day if there's a gap
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
-    const recentWork = plants.some(plant => {
-      if (!plant.lastWatered) return false
-      const lastWorked = new Date(plant.lastWatered)
-      return lastWorked > twoHoursAgo
-    })
-    
-    return !recentWork
-  }, [user, hasShownDailyPanel, plants])
+    // Check for daily decay - but show panel regardless of decay result
+    try {
+      const decayResult = await api.applyDailyDecay()
+      
+      // Only set decay info if there was actual decay applied or streak protection
+      if (decayResult.decay_applied && decayResult.decay_applied > 0) {
+        setDailyDecayInfo(decayResult)
+      } else if (decayResult.message && decayResult.message.includes('No decay applied due to streak protection')) {
+        setDailyDecayInfo(decayResult)
+      } else {
+        // No decay info to show, but still show the panel for daily task review
+        setDailyDecayInfo(null)
+      }
+      
+      // Always show panel for daily task review when user logs in
+      return true
+    } catch (error) {
+      console.error('Failed to check daily decay:', error)
+      // Still show panel even if decay check fails
+      setDailyDecayInfo(null)
+      return true
+    }
+  }, [user, plants, taskPanelClosedThisSession])
 
-  const skipDailyTasks = () => {
-    const today = new Date().toDateString()
-    localStorage.setItem(`taskPanelSkipped_${today}`, 'true')
-    setShouldAutoShowTasks(false)
-    setShowTaskPanel(false)
-    setMode('plant')
-  }
 
   // Effects
   useEffect(() => {
@@ -407,26 +854,38 @@ export default function CanvasGarden() {
     loadUserProgress()
   }, [loadPlants, loadUserProgress])
 
+  // Background music initialization
   useEffect(() => {
-    if (mode !== 'tasks') {
-      setShowWorkDialog(false)
+    const bgMusicSetting = localStorage.getItem('taskgarden_background_music')
+    const backgroundMusicEnabled = bgMusicSetting === null ? true : bgMusicSetting === 'true' // Default to true
+    const soundEnabled = localStorage.getItem('taskgarden_sound_enabled') !== 'false'
+    
+    if (backgroundMusicEnabled && soundEnabled) {
+      // Small delay to ensure audio context is ready after user interaction
+      const timer = setTimeout(() => {
+        sounds.startBackgroundMusic()
+      }, 2000)
+      
+      return () => clearTimeout(timer)
     }
-  }, [mode])
+  }, [sounds])
 
   useEffect(() => {
-    if (user && plants.length > 0) {
-      const shouldShow = shouldShowDailyTasks()
-      
-      if (shouldShow) {
-        setShouldAutoShowTasks(true)
-        setShowTaskPanel(true)
-        setMode('tasks')
-        setHasShownDailyPanel(true)
-        setSelectedPlant(null)
-        setShowWorkDialog(false)
+    // Only show task panel on actual login, not on refresh/reload
+    if (user && plants.length > 0 && isNewLogin) {
+      const checkAndShowPanel = async () => {
+        const shouldShow = await shouldShowDailyTasks()
+        
+        if (shouldShow) {
+          setShouldAutoShowTasks(true)
+          setShowTaskPanel(true)
+          setSelectedPlant(null)
+        }
       }
+      
+      checkAndShowPanel()
     }
-  }, [user, plants, shouldShowDailyTasks, hasShownDailyPanel])
+  }, [user, plants, isNewLogin, shouldShowDailyTasks])
 
   // Preload sprites
   useEffect(() => {
@@ -449,22 +908,50 @@ export default function CanvasGarden() {
   }, [])
 
   useEffect(() => {
-    if (focusedPlantId && mode === 'tasks') {
+    if (focusedPlantId) {
+      // Enhanced auto-focus with better timing and visual feedback
       const timer = setTimeout(() => {
         const taskInput = document.getElementById(`task-input-${focusedPlantId}`)
         if (taskInput) {
+          // Smooth focus with visual highlight
           taskInput.focus()
-          taskInput.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          taskInput.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center',
+            inline: 'nearest'
+          })
+          
+          // Add a subtle pulse effect to draw attention
+          taskInput.style.animation = 'pulse 0.5s ease-in-out'
+          
+          // Clean up animation after it completes
+          setTimeout(() => {
+            if (taskInput) {
+              taskInput.style.animation = ''
+            }
+          }, 500)
         }
-      }, 300)
+      }, 200) // Reduced delay for snappier feel
       
       return () => clearTimeout(timer)
     }
-  }, [focusedPlantId, mode])
+  }, [focusedPlantId])
+
+  // Close context menu on escape key
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPlantContextMenu(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   return (
     <motion.div 
-      className="min-h-screen bg-gradient-to-br from-green-800 via-green-700 to-green-600"
+      className="min-h-screen bg-gradient-to-br from-green-800 via-green-700 to-green-600 flex flex-col relative"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.8, ease: "easeOut" }}
@@ -473,24 +960,27 @@ export default function CanvasGarden() {
         initial={{ y: -20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.6, delay: 0.2 }}
+        className="relative z-20"
       >
         <GardenHeader
           user={user}
           userProgress={userProgress}
-          mode={mode}
-          onModeChange={handleModeChange}
           onLogout={logout}
+          plants={plants}
+          showAudioSettings={showAudioSettings}
+          onToggleAudioSettings={toggleAudioSettings}
+          sounds={sounds}
         />
       </motion.div>
 
-      <div className="relative h-[calc(100vh-100px)] overflow-hidden">
+      <div className="relative flex-1 min-h-0 overflow-hidden">
         <motion.div 
           className="relative z-10 h-full"
           initial={{ scale: 0.95, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.7, delay: 0.4, ease: "easeOut" }}
         >
-          <div className="flex h-full p-4 justify-center items-center">
+          <div className="flex h-full p-2 sm:p-4 justify-center items-center">
             <CinematicPlotFocus
               isActive={isCinemaMode}
               focusPosition={focusPosition}
@@ -505,7 +995,6 @@ export default function CanvasGarden() {
                 plants={plants}
                 selectedPlant={selectedPlant}
                 hoveredPlant={hoveredPlant}
-                mode={mode}
                 mousePos={mousePos}
                 onCanvasClick={handleCanvasClick}
                 onCanvasMouseMove={handleCanvasMouseMove}
@@ -518,7 +1007,7 @@ export default function CanvasGarden() {
 
       {/* Modals and UI Components */}
       <AnimatePresence>
-        {mode === 'info' && selectedPlant !== null && (
+        {(showPlantDetails && selectedPlant) && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -528,7 +1017,10 @@ export default function CanvasGarden() {
             <PlantDetailsModal
               plant={selectedPlant}
               isOpen={true}
-              onClose={() => setMode('plant')}
+              onClose={() => {
+                setShowPlantDetails(false)
+                setSelectedPlant(null)
+              }}
             />
           </motion.div>
         )}
@@ -557,6 +1049,8 @@ export default function CanvasGarden() {
         isOpen={showWorkDialog}
         onClose={() => setShowWorkDialog(false)}
         onLogWork={logWork}
+        onCompleteStep={completeTaskStep}
+        onPartialStep={updateTaskStepPartial}
       />
 
       <TrophyDialog
@@ -569,24 +1063,106 @@ export default function CanvasGarden() {
         onCompleteTask={completeTask}
       />
 
+      <PlantManagementModal
+        plant={selectedPlant}
+        isOpen={showPlantManagement}
+        onClose={() => {
+          setShowPlantManagement(false)
+          setSelectedPlant(null)
+        }}
+        onDeletePlant={deletePlant}
+        onRenamePlant={renamePlant}
+        onConvertToMultiStep={convertToMultiStep}
+      />
+
       <TaskPanel
         plants={plants}
         isOpen={showTaskPanel}
         shouldAutoShow={shouldAutoShowTasks}
+        dailyDecayInfo={dailyDecayInfo}
         onClose={() => {
+          // Play modal close sound
+          sounds.playUI('modal_close')
+          
           setShouldAutoShowTasks(false)
           setShowTaskPanel(false)
           setFocusedPlantId(null)
-          setMode('plant')
+          
+          // Mark that user manually closed the panel this session
+          setTaskPanelClosedThisSession(true)
+          
+          // Clear decay info after closing
+          setDailyDecayInfo(null)
         }}
-        onSkipDaily={skipDailyTasks}
         onLogWork={logWork}
         onCompleteTask={completeTask}
-        onCreateNew={() => setMode('plant')}
+        onCreateNew={() => {}}
         onSuccess={showSuccessMsg}
         focusedPlantId={focusedPlantId}
         onSetFocusedPlant={setFocusedPlantId}
       />
+
+      {/* Plant Context Menu */}
+      <AnimatePresence>
+        {plantContextMenu && (
+          <motion.div
+            className="absolute z-50 bg-black/90 backdrop-blur-sm rounded-xl border border-white/20 p-2 min-w-48"
+            style={{
+              left: plantContextMenu.x,
+              top: plantContextMenu.y,
+              transform: 'translate(-50%, -50%)'
+            }}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-white text-sm font-medium">
+                {plantContextMenu.plant.name}
+              </div>
+              <button
+                onClick={() => setPlantContextMenu(null)}
+                className="text-white/60 hover:text-white transition-colors p-1"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-1">
+              {/* View Info Action */}
+              <button
+                onClick={() => handlePlantAction('info', plantContextMenu.plant)}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center space-x-2 hover:bg-white/10 text-white"
+              >
+                <Info className="w-4 h-4" />
+                <span>View Details & Analytics</span>
+              </button>
+
+              {/* Log Work/Harvest Action - Dynamic based on plant stage */}
+              <button
+                onClick={() => handlePlantAction('tasks', plantContextMenu.plant)}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center space-x-2 hover:bg-white/10 text-white"
+              >
+                <BarChart3 className="w-4 h-4" />
+                <span>
+                  {plantContextMenu.plant.stage >= 5 ? 'Harvest Plant' : 'Log Work Hours'}
+                </span>
+              </button>
+
+              {/* Plant Management Action */}
+              <button
+                onClick={() => handlePlantAction('manage', plantContextMenu.plant)}
+                className="w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center space-x-2 hover:bg-white/10 text-white"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Plant Management</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <SuccessMessage
         message={submissionMessage}
@@ -621,16 +1197,7 @@ export default function CanvasGarden() {
         />
       ))}
       
-      {loading && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40">
-          <div className="card">
-            <div className="flex items-center space-x-3">
-              <div className="loading-spinner"></div>
-              <span className="text-white font-medium">Loading your garden...</span>
-            </div>
-          </div>
-        </div>
-      )}
+      <LoadingState isLoading={loading} />
     </motion.div>
   )
 }

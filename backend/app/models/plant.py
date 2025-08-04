@@ -1,7 +1,16 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from enum import Enum
+
+class TaskStep(BaseModel):
+    id: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = Field(None, max_length=200)
+    is_completed: bool = False
+    is_partial: bool = False  # For partial completion tracking
+    completed_at: Optional[datetime] = None
+    work_hours: float = Field(default=0.0, ge=0.0)  # Hours worked on this step
 
 class PlantType(str, Enum):
     WORK = "work"
@@ -29,6 +38,8 @@ class PlantCreate(BaseModel):
     plant_sprite: str = Field(..., min_length=1, max_length=50)
     position_x: int = Field(..., ge=0, le=8)  # Updated for 9x7 grid (0-8)
     position_y: int = Field(..., ge=0, le=6)  # Updated for 9x7 grid (0-6)
+    task_steps: Optional[List[TaskStep]] = Field(default=[], description="Steps for multi-step tasks")
+    is_multi_step: bool = Field(default=False, description="Whether this is a multi-step task")
 
 class PlantUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
@@ -38,6 +49,7 @@ class PlantUpdate(BaseModel):
     position_x: Optional[int] = Field(None, ge=0, le=8)  # Updated for 9x7 grid
     position_y: Optional[int] = Field(None, ge=0, le=6)
     is_active: Optional[bool] = None
+    task_steps: Optional[List[TaskStep]] = None
 
 class PlantResponse(BaseModel):
     id: str
@@ -61,11 +73,30 @@ class PlantResponse(BaseModel):
     current_streak: Optional[int] = 0
     created_at: datetime
     updated_at: datetime
+    task_steps: Optional[List[TaskStep]] = Field(default=[], description="Steps for multi-step tasks")
+    is_multi_step: bool = Field(default=False, description="Whether this is a multi-step task")
+    completed_steps: Optional[int] = Field(default=0, description="Number of completed steps")
+    total_steps: Optional[int] = Field(default=0, description="Total number of steps")
 
 
 class TaskWorkCreate(BaseModel):
     plant_id: str
     hours_worked: float = Field(..., gt=0, le=24)
+
+class TaskStepComplete(BaseModel):
+    plant_id: str
+    step_id: str
+    hours_worked: Optional[float] = Field(None, gt=0, le=24)
+
+class TaskStepPartial(BaseModel):
+    plant_id: str
+    step_id: str
+    hours_worked: float = Field(..., gt=0, le=24)
+    mark_partial: bool = Field(default=True, description="Mark step as partially complete")
+
+class PlantConvertToMultiStep(BaseModel):
+    plant_id: str
+    task_steps: List[TaskStep] = Field(..., min_items=1, description="Steps to add to the task")
 
 class TaskWorkResponse(BaseModel):
     id: str

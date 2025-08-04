@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Leaf, Mail, Lock, User, Eye, EyeOff } from 'lucide-react'
+import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function SignUp() {
@@ -34,9 +34,6 @@ export default function SignUp() {
       <header className="bg-black/20 backdrop-blur-sm border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
-              <Leaf className="w-6 h-6 text-white" />
-            </div>
             <span className="text-xl font-bold text-white">Task Garden</span>
           </Link>
           
@@ -70,9 +67,13 @@ export default function SignUp() {
                 initial={{ scale: 0, rotate: -180 }}
                 animate={{ scale: 1, rotate: 0 }}
                 transition={{ duration: 0.8, type: "spring", bounce: 0.5 }}
-                className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-green-400 to-emerald-600 rounded-2xl mb-6 pulse-glow"
+                className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-6 pulse-glow overflow-hidden bg-white/10 backdrop-blur-sm"
               >
-                <Leaf className="w-10 h-10 text-white" />
+                <img 
+                  src="/assets/logo.png" 
+                  alt="TaskGarden Logo" 
+                  className="w-full h-full object-cover rounded-xl"
+                />
               </motion.div>
               
               <motion.h1 
@@ -194,10 +195,7 @@ export default function SignUp() {
                     <span>Creating account...</span>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center space-x-2">
-                    <Leaf className="w-5 h-5" />
-                    <span>Plant Your Garden</span>
-                  </div>
+                  <span>Plant Your Garden</span>
                 )}
               </motion.button>
             </form>

@@ -1,8 +1,10 @@
 from typing import List, Optional
 from datetime import datetime, date
+import uuid
 from app.config import supabase
 from app.models.plant import PlantCreate, PlantUpdate, PlantResponse, TaskWorkCreate, TaskWorkResponse, UserProgressResponse, ProductivityCategory, PlantType, DecayStatus
 from fastapi import HTTPException
+from app.services.xp_service import XPService
 
 class PlantService:
     
@@ -12,6 +14,15 @@ class PlantService:
         try:
             # First, clear any inactive plants at this position to avoid conflicts
             client.table("plants").delete().eq("user_id", user_id).eq("position_x", plant_data.position_x).eq("position_y", plant_data.position_y).eq("is_active", False).execute()
+            
+            # Ensure all task steps have proper UUIDs
+            task_steps_with_ids = []
+            if plant_data.task_steps:
+                for step in plant_data.task_steps:
+                    step_dict = step.dict()
+                    if not step_dict.get('id'):
+                        step_dict['id'] = str(uuid.uuid4())
+                    task_steps_with_ids.append(step_dict)
             
             # Handle both old plant_type and new productivity_category
             insert_data = {
@@ -27,7 +38,12 @@ class PlantService:
                 "experience_points": 0,
                 "is_active": True,
                 "decay_status": DecayStatus.HEALTHY.value,
-                "days_without_care": 0
+                "days_without_care": 0,
+                # Multi-step task fields
+                "is_multi_step": plant_data.is_multi_step,
+                "task_steps": task_steps_with_ids,
+                "completed_steps": 0,
+                "total_steps": len(task_steps_with_ids)
             }
             
             if hasattr(plant_data, 'productivity_category') and plant_data.productivity_category:
@@ -52,30 +68,46 @@ class PlantService:
     async def get_user_plants(user_id: str, auth_supabase=None) -> List[PlantResponse]:
         client = auth_supabase or supabase
         try:
-            result = client.table("plants").select("*").eq("user_id", user_id).eq("is_active", True).execute()
+            # PERFORMANCE OPTIMIZATION: Select only necessary fields to reduce data transfer
+            # IMPORTANT: Include multi-step task fields for proper task step display
+            result = client.table("plants").select(
+                "id, user_id, name, task_name, task_description, task_status, plant_type, plant_sprite, "
+                "position_x, position_y, growth_level, experience_points, current_streak, "
+                "last_worked_date, days_without_care, decay_status, is_active, "
+                "created_at, updated_at, completion_date, "
+                "is_multi_step, task_steps, completed_steps, total_steps"
+            ).eq("user_id", user_id).eq("is_active", True).order("position_x", desc=False).order("position_y", desc=False).execute()
             
             plants = []
             for plant_dict in result.data:
-                if 'decay_status' not in plant_dict:
-                    plant_dict['decay_status'] = DecayStatus.HEALTHY.value
-                if 'days_without_care' not in plant_dict:
-                    plant_dict['days_without_care'] = 0
-                if 'plant_sprite' not in plant_dict:
-                    plant_dict['plant_sprite'] = 'carrot'
+                # Set defaults only for missing fields (faster than checking each time)
+                plant_dict.setdefault('decay_status', DecayStatus.HEALTHY.value)
+                plant_dict.setdefault('days_without_care', 0)
+                plant_dict.setdefault('plant_sprite', 'carrot')
+                plant_dict.setdefault('task_name', plant_dict.get('name', 'Unnamed Task'))
+                plant_dict.setdefault('task_description', None)
+                plant_dict.setdefault('task_status', 'active')
+                plant_dict.setdefault('plant_type', PlantType.WORK.value)
                 
-                # Handle backward compatibility for task fields
-                if 'task_name' not in plant_dict or not plant_dict.get('task_name'):
-                    plant_dict['task_name'] = plant_dict.get('name', 'Unnamed Task')
-                if 'task_description' not in plant_dict:
-                    plant_dict['task_description'] = None
-                if 'task_status' not in plant_dict:
-                    plant_dict['task_status'] = 'active'
+                # Set defaults for multi-step task fields (backwards compatibility)
+                plant_dict.setdefault('is_multi_step', False)
+                plant_dict.setdefault('task_steps', [])
+                plant_dict.setdefault('completed_steps', 0)
+                plant_dict.setdefault('total_steps', 0)
                 
-                if 'productivity_category' not in plant_dict and 'plant_type' not in plant_dict:
-                    plant_dict['plant_type'] = PlantType.WORK.value
+                # Fix task steps with null IDs by generating UUIDs
+                if plant_dict.get('task_steps'):
+                    fixed_steps = []
+                    for step in plant_dict['task_steps']:
+                        if not step.get('id'):
+                            step['id'] = str(uuid.uuid4())
+                        fixed_steps.append(step)
+                    plant_dict['task_steps'] = fixed_steps
                 
-                plant_dict['task_level'] = PlantService._calculate_task_level(plant_dict.get('experience_points', 0))
-                plant_dict['current_streak'] = PlantService._calculate_streak_from_updated_at_dict(plant_dict)
+                # Pre-calculate derived fields once (faster than multiple calculations)
+                experience_points = plant_dict.get('experience_points', 0)
+                plant_dict['task_level'] = PlantService._calculate_task_level(experience_points)
+                plant_dict['current_streak'] = plant_dict.get('current_streak', 0) or 0
                 plant_dict['last_worked_date'] = plant_dict.get('updated_at')
                     
                 plants.append(PlantResponse(**plant_dict))
@@ -102,6 +134,16 @@ class PlantService:
                 plant_dict['days_without_care'] = 0
             if 'plant_sprite' not in plant_dict:
                 plant_dict['plant_sprite'] = 'carrot'  # Default sprite
+            
+            # Fix task steps with null IDs by generating UUIDs
+            if plant_dict.get('task_steps'):
+                fixed_steps = []
+                for step in plant_dict['task_steps']:
+                    if not step.get('id'):
+                        step['id'] = str(uuid.uuid4())
+                    fixed_steps.append(step)
+                plant_dict['task_steps'] = fixed_steps
+                
             return PlantResponse(**plant_dict)
             
         except HTTPException:
@@ -171,65 +213,126 @@ class PlantService:
     async def log_task_work(user_id: str, work_data: TaskWorkCreate, auth_supabase=None) -> dict:
         client = auth_supabase or supabase
         try:
-            plant = await PlantService.get_plant_by_id(user_id, work_data.plant_id, auth_supabase)
-            if not plant:
+            plant_result = client.table("plants").select("experience_points, current_streak, updated_at, is_multi_step, task_name, task_level, task_status, completed_steps, total_steps").eq("id", work_data.plant_id).eq("user_id", user_id).eq("is_active", True).single().execute()
+            
+            if not plant_result.data:
                 raise HTTPException(status_code=404, detail="Plant not found")
             
+            plant = plant_result.data
             experience_gained = int(work_data.hours_worked * 100)
-            new_experience = plant.experience_points + experience_gained
-            new_task_level = PlantService._calculate_task_level(new_experience)
-            new_growth = new_task_level * 20
             
-            from datetime import date
-            today = date.today()
-            
-            # Calculate new streak based on last work date
-            if plant.updated_at:
-                last_work_date = date.fromisoformat(plant.updated_at.split('T')[0]) if isinstance(plant.updated_at, str) else plant.updated_at.date()
-                days_since_work = (today - last_work_date).days
+            if plant.get("is_multi_step"):
                 
-                if days_since_work == 0:
-                    # Worked today already, keep current streak
-                    new_streak = plant.current_streak or 1
-                elif days_since_work == 1:
-                    # Worked yesterday, increment streak
-                    new_streak = (plant.current_streak or 0) + 1
+                from datetime import date
+                today = date.today()
+                
+                # Calculate streak but don't change task completion
+                if plant["updated_at"]:
+                    last_work_date = date.fromisoformat(plant["updated_at"].split('T')[0]) if isinstance(plant["updated_at"], str) else plant["updated_at"].date()
+                    days_since_work = (today - last_work_date).days
+                    
+                    if days_since_work == 0:
+                        new_streak = plant["current_streak"] or 1
+                    elif days_since_work == 1:
+                        new_streak = (plant["current_streak"] or 0) + 1
+                    else:
+                        new_streak = 1
                 else:
-                    # Missed days, reset streak
                     new_streak = 1
+                
+                # Multi-step update: PRESERVE all task completion fields, only update timestamps and streak
+                update_result = client.table("plants").update({
+                    "current_streak": new_streak,
+                    "last_worked_date": today.isoformat(),
+                    "days_without_care": 0,
+                    "decay_status": DecayStatus.HEALTHY.value,
+                    "is_active": True
+                }).eq("id", work_data.plant_id).eq("user_id", user_id).execute()
+                
+                if not update_result.data:
+                    raise HTTPException(status_code=400, detail="Failed to update plant")
+                
+                # Update user XP separately (they still get XP for time worked)
+                try:
+                    await PlantService._update_user_progress_fast(user_id, experience_gained)
+                except Exception:
+                    pass
+                
+                from datetime import datetime
+                now = datetime.now()
+                return {
+                    "id": f"work_{work_data.plant_id}_{now.isoformat()}",
+                    "plant_id": work_data.plant_id,
+                    "user_id": user_id,
+                    "hours_worked": work_data.hours_worked,
+                    "experience_gained": experience_gained,
+                    "new_task_level": plant.get("task_level"),  # Keep current task_level unchanged
+                    "new_growth_level": plant.get("task_level", 1) * 20,  # Based on current task_level, not updated
+                    "current_streak": new_streak,
+                    "last_worked_date": today.isoformat(),
+                    "created_at": now.isoformat(),
+                    "task_completed": False,  # Multi-step tasks never complete from time logging
+                    "message": "Multi-step task: time logged, XP gained, task state preserved"
+                }
+            
             else:
-                new_streak = 1
-            
-            # Reset plant health when worked on (recovery from decay)
-            update_result = client.table("plants").update({
-                "experience_points": new_experience,
-                "growth_level": min(100, new_growth),
-                "current_streak": new_streak,
-                "last_worked_date": today.isoformat(),
-                "days_without_care": 0,  # Reset decay counter
-                "decay_status": DecayStatus.HEALTHY.value,  # Restore health
-                "is_active": True  # Revive dead plants
-            }).eq("id", work_data.plant_id).eq("user_id", user_id).execute()
-            
-            if not update_result.data:
-                raise HTTPException(status_code=400, detail="Failed to update plant")
-            
-            await PlantService._update_user_progress(user_id, experience_gained)
-            
-            from datetime import datetime
-            now = datetime.now()
-            return {
-                "id": f"work_{work_data.plant_id}_{now.isoformat()}",
-                "plant_id": work_data.plant_id,
-                "user_id": user_id,
-                "hours_worked": work_data.hours_worked,
-                "experience_gained": experience_gained,
-                "new_task_level": new_task_level,
-                "new_growth_level": min(100, new_growth),
-                "current_streak": new_streak,
-                "last_worked_date": today.isoformat(),
-                "created_at": now.isoformat()
-            }
+                
+                # For single-step: proceed with normal completion logic
+                new_experience = plant["experience_points"] + experience_gained
+                new_task_level = PlantService._calculate_task_level(new_experience)
+                new_growth = new_task_level * 20
+                
+                from datetime import date
+                today = date.today()
+                
+                # Calculate new streak based on last work date
+                if plant["updated_at"]:
+                    last_work_date = date.fromisoformat(plant["updated_at"].split('T')[0]) if isinstance(plant["updated_at"], str) else plant["updated_at"].date()
+                    days_since_work = (today - last_work_date).days
+                    
+                    if days_since_work == 0:
+                        new_streak = plant["current_streak"] or 1
+                    elif days_since_work == 1:
+                        new_streak = (plant["current_streak"] or 0) + 1
+                    else:
+                        new_streak = 1
+                else:
+                    new_streak = 1
+                
+                # Single-step update: Normal completion logic
+                update_result = client.table("plants").update({
+                    "experience_points": new_experience,
+                    "growth_level": min(100, new_growth),
+                    "current_streak": new_streak,
+                    "last_worked_date": today.isoformat(),
+                    "days_without_care": 0,
+                    "decay_status": DecayStatus.HEALTHY.value,
+                    "is_active": True
+                }).eq("id", work_data.plant_id).eq("user_id", user_id).execute()
+                
+                if not update_result.data:
+                    raise HTTPException(status_code=400, detail="Failed to update plant")
+                
+                # Update user XP
+                try:
+                    await PlantService._update_user_progress_fast(user_id, experience_gained)
+                except Exception:
+                    pass
+                
+                from datetime import datetime
+                now = datetime.now()
+                return {
+                    "id": f"work_{work_data.plant_id}_{now.isoformat()}",
+                    "plant_id": work_data.plant_id,
+                    "user_id": user_id,
+                    "hours_worked": work_data.hours_worked,
+                    "experience_gained": experience_gained,
+                    "new_task_level": new_task_level,
+                    "new_growth_level": min(100, new_growth),
+                    "current_streak": new_streak,
+                    "last_worked_date": today.isoformat(),
+                    "created_at": now.isoformat()
+                }
             
         except HTTPException:
             raise
@@ -361,36 +464,24 @@ class PlantService:
                     "is_active": decay_status != DecayStatus.DEAD
                 }).eq("id", plant.id).execute()
                 
-        except Exception as e:
-            print(f"Error applying daily decay: {str(e)}")
+        except Exception:
+            pass
     
     @staticmethod
     async def _update_user_progress(user_id: str, experience_gained: int):
+        """Update user progress using XP service (fallback method)"""
         try:
-            result = supabase.table("user_progress").select("*").eq("user_id", user_id).execute()
-            
-            if not result.data:
-                supabase.table("user_progress").insert({
-                    "user_id": user_id,
-                    "total_experience": experience_gained,
-                    "level": 1,
-                    "tasks_completed": 0,
-                    "plants_grown": 0,
-                    "longest_streak": 0,
-                    "current_streak": 0,
-                    "last_activity_date": date.today().isoformat()
-                }).execute()
-            else:
-                progress = result.data[0]
-                new_total_exp = progress["total_experience"] + experience_gained
-                new_level = max(1, (new_total_exp // 100) + 1)
-                
-                supabase.table("user_progress").update({
-                    "total_experience": new_total_exp,
-                    "level": new_level,
-                    "last_activity_date": date.today().isoformat()
-                }).eq("user_id", user_id).execute()
-                
+            # Use XP service to properly calculate and update user progress
+            await XPService.update_user_xp(user_id, experience_gained)
+        except Exception:
+            pass
+
+    @staticmethod
+    async def _update_user_progress_fast(user_id: str, experience_gained: int):
+        """Update user progress using XP service"""
+        try:
+            # Use XP service to properly calculate and update user progress
+            await XPService.update_user_xp(user_id, experience_gained)
         except Exception:
             pass
     
@@ -504,3 +595,254 @@ class PlantService:
             
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get today's work logs: {str(e)}")
+
+    @staticmethod
+    async def complete_task_step(user_id: str, step_data, auth_supabase=None):
+        """Complete a task step and update plant growth based on milestone-based system"""
+        client = auth_supabase or supabase
+        try:
+            # Validate UUIDs before making database call
+            import re
+            uuid_pattern = r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+            
+            if not re.match(uuid_pattern, step_data.plant_id, re.IGNORECASE):
+                raise HTTPException(status_code=400, detail=f"Invalid plant ID format: {step_data.plant_id}")
+                
+            if not re.match(uuid_pattern, step_data.step_id, re.IGNORECASE):
+                raise HTTPException(status_code=400, detail=f"Invalid step ID format: {step_data.step_id}")
+            
+            # Get plant with current steps
+            plant_result = client.table("plants").select(
+                "id, user_id, name, task_name, task_description, task_status, plant_type, plant_sprite, "
+                "position_x, position_y, growth_level, experience_points, current_streak, "
+                "last_worked_date, days_without_care, decay_status, is_active, "
+                "created_at, updated_at, completion_date, "
+                "is_multi_step, task_steps, completed_steps, total_steps"
+            ).eq("id", step_data.plant_id).eq("user_id", user_id).single().execute()
+            
+            if not plant_result.data:
+                raise HTTPException(status_code=404, detail="Plant not found")
+            
+            plant = plant_result.data
+            
+            # Fix task steps with null IDs by generating UUIDs (same as in get_user_plants)
+            if plant.get('task_steps'):
+                fixed_steps = []
+                for step in plant['task_steps']:
+                    if not step.get('id'):
+                        step['id'] = str(uuid.uuid4())
+                    fixed_steps.append(step)
+                plant['task_steps'] = fixed_steps
+            
+            # Update task steps
+            task_steps = plant.get("task_steps", [])
+            step_found = False
+            completed_steps = 0
+            
+            
+            for i, step in enumerate(task_steps):
+                if step.get("id") == step_data.step_id:
+                    step["is_completed"] = True
+                    step["completed_at"] = datetime.now().isoformat()
+                    if hasattr(step_data, 'hours_worked') and step_data.hours_worked is not None:
+                        step["work_hours"] = step.get("work_hours", 0) + step_data.hours_worked
+                    step_found = True
+                
+                if step.get("is_completed"):
+                    completed_steps += 1
+            
+            if not step_found:
+                raise HTTPException(status_code=404, detail="Task step not found")
+            
+            
+            # Calculate milestone-based growth
+            total_steps = len(task_steps)
+            
+            # Each completed step = 1 growth stage (up to stage 5)
+            new_growth_stage = min(5, completed_steps)
+            new_growth_level = new_growth_stage * 20  # Convert stage to 0-100 scale
+            
+            # Calculate experience (bonus for completing steps + optional hours)
+            experience_bonus = 50 if completed_steps == total_steps else 25
+            # Only add hours XP if hours were actually worked (allow step completion without time tracking)
+            hours_xp = int((step_data.hours_worked or 0) * 100) if step_data.hours_worked else 0
+            total_experience_gained = hours_xp + experience_bonus
+            
+            
+            # Update plant
+            update_data = {
+                "task_steps": task_steps,
+                "completed_steps": completed_steps,
+                "total_steps": total_steps,
+                "task_level": new_growth_stage,  # Update task level for each completed step
+                "growth_level": new_growth_level,
+                "experience_points": plant["experience_points"] + total_experience_gained,
+                "last_worked_date": datetime.now().date().isoformat(),
+                "days_without_care": 0,
+                "decay_status": DecayStatus.HEALTHY.value,
+            }
+            
+            # Mark as completed if all steps done
+            if completed_steps == total_steps:
+                update_data["task_status"] = "completed"
+                update_data["completion_date"] = datetime.now().isoformat()
+            
+            update_result = client.table("plants").update(update_data).eq("id", step_data.plant_id).eq("user_id", user_id).execute()
+            
+            if not update_result.data:
+                raise HTTPException(status_code=400, detail="Failed to update plant")
+            
+            # Update user progress
+            try:
+                await PlantService._update_user_progress_fast(user_id, total_experience_gained)
+            except Exception:
+                pass
+            
+            return {
+                "success": True,
+                "completed_steps": completed_steps,
+                "total_steps": total_steps,
+                "new_growth_stage": new_growth_stage,
+                "new_task_level": new_growth_stage,  # Add this for frontend compatibility
+                "experience_gained": total_experience_gained,
+                "task_completed": completed_steps == total_steps
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to complete task step: {str(e)}")
+
+    @staticmethod
+    async def update_task_step_partial(user_id: str, step_data, auth_supabase=None):
+        """Mark a task step as partially complete and add work hours"""
+        client = auth_supabase or supabase
+        try:
+            # Get plant with current steps
+            plant_result = client.table("plants").select("*").eq("id", step_data.plant_id).eq("user_id", user_id).single().execute()
+            
+            if not plant_result.data:
+                raise HTTPException(status_code=404, detail="Plant not found")
+            
+            plant = plant_result.data
+            task_steps = plant.get("task_steps", [])
+            step_found = False
+            
+            for step in task_steps:
+                if step.get("id") == step_data.step_id:
+                    step["is_partial"] = step_data.mark_partial
+                    step["work_hours"] = step.get("work_hours", 0) + step_data.hours_worked
+                    step_found = True
+                    break
+            
+            if not step_found:
+                raise HTTPException(status_code=404, detail="Task step not found")
+            
+            # Calculate experience for work done
+            experience_gained = int(step_data.hours_worked * 100)
+            
+            # For single-step tasks or partial work, give small growth boost
+            current_growth = plant.get("growth_level", 0)
+            growth_boost = min(5, step_data.hours_worked * 2)  # Small visual progress
+            new_growth = min(100, current_growth + growth_boost)
+            
+            # Update plant
+            update_result = client.table("plants").update({
+                "task_steps": task_steps,
+                "growth_level": new_growth,
+                "experience_points": plant["experience_points"] + experience_gained,
+                "last_worked_date": datetime.now().date().isoformat(),
+                "days_without_care": 0,
+                "decay_status": DecayStatus.HEALTHY.value,
+            }).eq("id", step_data.plant_id).eq("user_id", user_id).execute()
+            
+            if not update_result.data:
+                raise HTTPException(status_code=400, detail="Failed to update plant")
+            
+            # Update user progress
+            try:
+                await PlantService._update_user_progress_fast(user_id, experience_gained)
+            except Exception:
+                pass
+            
+            return {
+                "success": True,
+                "experience_gained": experience_gained,
+                "new_growth_level": new_growth,
+                "hours_added": step_data.hours_worked
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to update task step: {str(e)}")
+
+    @staticmethod
+    def calculate_milestone_growth_stage(completed_steps: int, total_steps: int) -> int:
+        """Calculate growth stage based on milestone-based system"""
+        if total_steps == 0:
+            return 0
+        
+        # Each completed step = 1 growth stage (max 5)
+        return min(5, completed_steps)
+
+    @staticmethod
+    def calculate_single_task_growth_stage(hours_worked: float, experience_points: int) -> int:
+        """Calculate growth stage for single-step tasks based on work hours and experience"""
+        # Single-step tasks grow based on accumulated work and experience
+        task_level = PlantService._calculate_task_level(experience_points)
+        return min(5, task_level)
+
+    @staticmethod
+    async def convert_to_multi_step(user_id: str, plant_id: str, task_steps: List, auth_supabase=None):
+        """Convert a single-step task to a multi-step task"""
+        client = auth_supabase or supabase
+        try:
+            # Get the current plant
+            plant_result = client.table("plants").select("*").eq("id", plant_id).eq("user_id", user_id).single().execute()
+            
+            if not plant_result.data:
+                raise HTTPException(status_code=404, detail="Plant not found")
+            
+            plant = plant_result.data
+            
+            # Check if it's already multi-step
+            if plant.get("is_multi_step", False):
+                raise HTTPException(status_code=400, detail="Plant is already a multi-step task")
+            
+            # Add unique IDs to steps
+            from uuid import uuid4
+            steps_with_ids = []
+            for step in task_steps:
+                step_dict = {
+                    "id": str(uuid4()),
+                    "title": step.get("title", ""),
+                    "description": step.get("description", ""),
+                    "is_completed": False,
+                    "is_partial": False,
+                    "work_hours": 0.0,
+                    "completed_at": None
+                }
+                steps_with_ids.append(step_dict)
+            
+            # Update the plant to be multi-step
+            update_result = client.table("plants").update({
+                "is_multi_step": True,
+                "task_steps": steps_with_ids,
+                "total_steps": len(steps_with_ids),
+                "completed_steps": 0
+            }).eq("id", plant_id).eq("user_id", user_id).execute()
+            
+            if not update_result.data:
+                raise HTTPException(status_code=400, detail="Failed to convert plant to multi-step")
+            
+            return {
+                "success": True,
+                "message": "Task converted to multi-step successfully",
+                "total_steps": len(steps_with_ids)
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to convert task: {str(e)}")

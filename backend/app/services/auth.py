@@ -2,9 +2,16 @@ from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 from supabase import create_client
 import os
+import time
+from typing import Dict, Tuple
 
 from ..config import supabase, SUPABASE_URL, SUPABASE_KEY
 from ..models.user import UserRole
+
+
+# PERFORMANCE OPTIMIZATION: Simple in-memory cache for auth results
+_auth_cache: Dict[str, Tuple[str, float]] = {}
+_cache_ttl = 300  # 5 minutes cache for auth tokens
 
 
 def get_supabase_with_auth(jwt_token: str):
@@ -18,6 +25,17 @@ async def get_current_user_id(credentials: HTTPAuthorizationCredentials) -> str:
         token = credentials.credentials
         user_response = supabase.auth.get_user(token)
 
+        token = credentials.credentials
+        current_time = time.time()
+
+        # PERFORMANCE OPTIMIZATION: Check cache first
+        if token in _auth_cache:
+            user_id, cached_time = _auth_cache[token]
+            if current_time - cached_time < _cache_ttl:
+                return user_id
+
+        # Not in cache or expired, validate with Supabase
+        user_response = supabase.auth.get_user(token)
         if not user_response.user:
             raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -30,6 +48,22 @@ async def get_current_user_id(credentials: HTTPAuthorizationCredentials) -> str:
     except Exception:
         # clear the auth token is something goes wrong
         supabase.postgrest.auth(None)
+
+        user_id = user_response.user.id
+
+        # Cache the result for future requests
+        _auth_cache[token] = (user_id, current_time)
+
+        # Clean old cache entries (simple cleanup)
+        if len(_auth_cache) > 1000:  # Prevent memory bloat
+            expired_keys = [
+                k for k, (_, t) in _auth_cache.items() if current_time - t > _cache_ttl
+            ]
+            for k in expired_keys[:100]:  # Remove oldest 100 entries
+                _auth_cache.pop(k, None)
+
+        return user_id
+    except Exception:
         raise HTTPException(status_code=401, detail="Authentication failed")
 
 

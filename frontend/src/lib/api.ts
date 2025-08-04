@@ -1,6 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-import {
+import type {
   LoginData,
   RegisterData,
   AuthResponse,
@@ -12,6 +12,13 @@ import {
   UserProgressResponse,
   AdminUser,
   SystemStats,
+  TaskStepComplete,
+  TaskStepPartial,
+  PlantConvertToMultiStep,
+  Friendship,
+  UserProfile,
+  LeaderboardEntry,
+  UserProfileUpdate,
 } from "../types";
 
 class ApiError extends Error {
@@ -51,7 +58,10 @@ async function apiRequest<T>(
       const errorMessage = error.detail
         ? Array.isArray(error.detail)
           ? error.detail
-              .map((e) => `Field '${e.loc?.join(".")}': ${e.msg}`)
+              .map(
+                (e: { loc?: string[]; msg: string }) =>
+                  `Field '${e.loc?.join(".")}': ${e.msg}`
+              )
               .join(", ")
           : error.detail
         : "Validation failed";
@@ -68,7 +78,7 @@ async function apiRequest<T>(
   return response.json();
 }
 
-function getAuthHeaders() {
+function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("token");
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
@@ -200,6 +210,17 @@ export const api = {
     return this.get<TaskWorkResponse[]>("/plants/work/today");
   },
 
+  async applyDailyDecay(): Promise<{
+    decay_applied?: number;
+    level?: number;
+    streak?: number;
+    base_decay?: number;
+    streak_protection?: number;
+    message?: string;
+  }> {
+    return this.post("/users/apply-daily-decay");
+  },
+
   async completeTask(plantId: string): Promise<{ message: string }> {
     return this.post<{ message: string }>(`/plants/${plantId}/complete`);
   },
@@ -211,6 +232,48 @@ export const api = {
     return this.post<{ message: string; harvested_count: number }>(
       "/plants/harvest/user"
     );
+  },
+
+  async completeTaskStep(stepData: TaskStepComplete): Promise<{
+    success: boolean;
+    completed_steps: number;
+    total_steps: number;
+    new_growth_stage: number;
+    experience_gained: number;
+    task_completed: boolean;
+  }> {
+    return this.post<{
+      success: boolean;
+      completed_steps: number;
+      total_steps: number;
+      new_growth_stage: number;
+      experience_gained: number;
+      task_completed: boolean;
+    }>("/plants/steps/complete", stepData);
+  },
+
+  async updateTaskStepPartial(stepData: TaskStepPartial): Promise<{
+    success: boolean;
+    experience_gained: number;
+    new_growth_level: number;
+    hours_added: number;
+  }> {
+    return this.post<{
+      success: boolean;
+      experience_gained: number;
+      new_growth_level: number;
+      hours_added: number;
+    }>("/plants/steps/partial", stepData);
+  },
+
+  async convertToMultiStep(
+    conversionData: PlantConvertToMultiStep
+  ): Promise<{ success: boolean; message: string; total_steps: number }> {
+    return this.post<{
+      success: boolean;
+      message: string;
+      total_steps: number;
+    }>("/plants/convert-to-multi-step", conversionData);
   },
 
   // Friend Management

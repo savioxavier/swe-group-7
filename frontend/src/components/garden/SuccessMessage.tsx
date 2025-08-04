@@ -19,10 +19,12 @@ export const SuccessMessage: React.FC<SuccessMessageProps> = ({
         initial={{ opacity: 0, x: 300 }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: 300 }}
-        className="bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center space-x-2"
+        className="bg-green-500/90 backdrop-blur-sm text-white px-4 py-2 rounded-lg shadow-lg max-w-sm"
       >
-        <span className="text-2xl">Success!</span>
-        <span className="font-medium">{message}</span>
+        <div className="flex items-center space-x-2">
+          <span className="text-green-100 text-sm">✓</span>
+          <span className="text-sm font-medium">{message}</span>
+        </div>
       </motion.div>
     </div>,
     document.body
