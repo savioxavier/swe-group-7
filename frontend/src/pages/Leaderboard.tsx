@@ -100,7 +100,7 @@ export function LeaderboardPage() {
               className="flex items-center space-x-2 text-green-200"
             >
               <Leaf className="w-5 h-5 text-green-400" />
-              <span className="font-medium">Growing your garden...</span>
+              <span className="font-medium">Loading leaderboard...</span>
             </motion.div>
           </motion.div>
         </div>
