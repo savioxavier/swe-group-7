@@ -1,3 +1,5 @@
+<!-- markdownlint-disable no-inline-html -->
+
 # Task Garden Frontend 🌱
 
 React 19 + TypeScript + Vite frontend for the Task Garden productivity app.
@@ -32,6 +34,7 @@ React 19 + TypeScript + Vite frontend for the Task Garden productivity app.
 ### Installation
 
 **Navigate to frontend directory:**
+
 ```bash
 cd frontend
 ```
@@ -44,6 +47,7 @@ cd frontend
 ```bash
 pnpm install
 ```
+
 </details>
 
 <details>
@@ -52,6 +56,7 @@ pnpm install
 ```bash
 npm install
 ```
+
 </details>
 
 ### Development
@@ -64,6 +69,7 @@ npm install
 ```bash
 pnpm dev
 ```
+
 </details>
 
 <details>
@@ -72,9 +78,11 @@ pnpm dev
 ```bash
 npm run dev
 ```
+
 </details>
 
 **Access the application:**
+
 - Frontend: `http://localhost:5173`
 - Backend API: `http://localhost:8000`
 
@@ -88,6 +96,7 @@ npm run dev
 ```bash
 pnpm build
 ```
+
 </details>
 
 <details>
@@ -96,6 +105,7 @@ pnpm build
 ```bash
 npm run build
 ```
+
 </details>
 
 **Preview production build:**
@@ -106,6 +116,7 @@ npm run build
 ```bash
 pnpm preview
 ```
+
 </details>
 
 <details>
@@ -114,6 +125,7 @@ pnpm preview
 ```bash
 npm run preview
 ```
+
 </details>
 
 ## Available Scripts
@@ -127,7 +139,7 @@ npm run preview
 
 ## Project Structure
 
-```
+```text
 frontend/
 ├── src/
 │   ├── components/           # React components
@@ -178,16 +190,19 @@ frontend/
 ## Key Components
 
 ### Core Garden System
+
 - **`CanvasGarden.tsx`** - Central garden state management and plant interactions
 - **`GardenCanvas.tsx`** - HTML5 Canvas rendering for plants and animations  
 - **`TaskPanel.tsx`** - Task management sidebar with multi-step support
 
 ### Animation System
+
 - **`CinematicPlanting.tsx`** - Smooth plant creation flow with camera effects
 - **`PlantGrowthEffects.tsx`** - Particle effects and growth celebrations
 - **`XPGainEffects.tsx`** - Floating XP numbers and progress feedback
 
 ### Sound System
+
 - **`soundManager.ts`** - Web Audio API wrapper with fallbacks
 - **`useSounds()`** - React hook for playing UI and plant sounds
 - **Background Music** - Looping ambient music with user controls
@@ -210,6 +225,7 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ### Tailwind Configuration
 
 The project uses a custom Tailwind configuration with:
+
 - **Green color palette** for nature theme
 - **Custom animations** for plant effects
 - **Responsive breakpoints** for mobile optimization
@@ -223,18 +239,21 @@ The project uses a custom Tailwind configuration with:
 ## Development Guidelines
 
 ### Code Style
+
 - Use **TypeScript** for all new files
 - Follow **React best practices** (hooks, functional components)
 - Use **Tailwind utilities** over custom CSS
 - Implement **proper error handling** with try/catch
 
 ### Performance
+
 - Use **React.memo** for expensive components
 - Implement **optimistic UI updates** for better UX
 - **Lazy load** heavy components when possible
 - **Optimize images** and audio assets
 
 ### Animations
+
 - Use **Framer Motion** for complex animations
 - Target **60fps** for smooth performance
 - Add **reduced motion** support for accessibility
@@ -245,6 +264,7 @@ The project uses a custom Tailwind configuration with:
 ### Common Issues
 
 **Development server won't start:**
+
 ```bash
 # Clear cache and reinstall
 rm -rf node_modules pnpm-lock.yaml
@@ -252,6 +272,7 @@ pnpm install
 ```
 
 **Build errors:**
+
 ```bash
 # Check TypeScript errors
 pnpm build
@@ -261,11 +282,13 @@ pnpm lint
 ```
 
 **Audio not working:**
+
 - Audio requires user interaction on mobile
 - Check browser audio permissions
 - Verify audio files are in `public/assets/`
 
 **Slow performance:**
+
 - Check browser developer tools for bottlenecks
 - Disable sound effects temporarily
 - Reduce animation complexity

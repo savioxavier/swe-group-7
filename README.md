@@ -1,3 +1,5 @@
+<!-- markdownlint-disable no-inline-html -->
+
 # TaskGarden
 
 A gamified productivity app that turns your tasks into a thriving virtual garden. Complete tasks to grow plants, track your progress, and build healthy productivity habits!
@@ -10,7 +12,7 @@ A gamified productivity app that turns your tasks into a thriving virtual garden
 - **Beautiful Animations**: Smooth plant growth and particle effects
 - **Audio Feedback**: Immersive sound system with background music
 - **Mobile Responsive**: Works seamlessly on desktop and mobile
--  **Real-time Updates**: Instant feedback and optimistic UI updates
+- **Real-time Updates**: Instant feedback and optimistic UI updates
 
 ## Tech Stack
 
@@ -39,6 +41,7 @@ cd swe-group-7
 #### 2. Backend Setup
 
 **Navigate to backend directory:**
+
 ```bash
 cd backend
 ```
@@ -52,6 +55,7 @@ cd backend
 python -m venv venv
 venv\Scripts\activate.bat
 ```
+
 </details>
 
 <details>
@@ -61,6 +65,7 @@ venv\Scripts\activate.bat
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
+
 </details>
 
 <details>
@@ -70,14 +75,17 @@ python -m venv venv
 python -m venv venv
 source venv/bin/activate
 ```
+
 </details>
 
 **Install dependencies:**
+
 ```bash
 pip install -r requirements.txt
 ```
 
 **Set up environment variables:**
+
 ```bash
 # Copy the example file
 cp .env.example .env
@@ -89,6 +97,7 @@ cp .env.example .env
 ```
 
 **Start the backend server:**
+
 ```bash
 uvicorn app.main:app --reload
 ```
@@ -99,6 +108,7 @@ API docs at: `http://localhost:8000/docs`
 #### 3. Frontend Setup
 
 **Open a new terminal and navigate to frontend directory:**
+
 ```bash
 cd frontend
 ```
@@ -111,9 +121,11 @@ cd frontend
 ```bash
 npm install
 ```
+
 </details>
 
 **Set up environment variables (optional):**
+
 ```bash
 # Copy example if you need custom configuration
 cp .env.example .env
@@ -127,17 +139,18 @@ cp .env.example .env
 ```bash
 npm run dev
 ```
+
 </details>
 
 Frontend will be available at: `http://localhost:5173`
 
-### Done!
+### Done
 
 Open your browser to `http://localhost:5173` and start growing your task garden!
 
 ## Project Structure
 
-```
+```text
 swe-group-7/
 ├── frontend/                 # React + TypeScript frontend
 │   ├── src/
@@ -199,13 +212,16 @@ npm run preview   # Preview production build
 ## Environment Variables
 
 ### Backend (.env)
+
 ```env
-SUPABASE_URL=your_supabase_project_url
+SUPABASE_URL=your_supabase_url
 SUPABASE_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_KEY=your_supabase_service_role_key
+DATABASE_URL=your_database_url
+JWT_SECRET=your_jwt_secret
 ```
 
 ### Frontend (.env - optional)
+
 ```env
 VITE_API_URL=http://localhost:8000
 VITE_SUPABASE_URL=your_supabase_project_url
@@ -222,4 +238,3 @@ VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 ## Communication
 
 - **Growth Hackers Catalog**: [Project Documentation](https://docs.google.com/document/d/1MyIpB0IGhxp_tIT_w1DIAZpAiOBAQuMNSoPe0142gMs/edit?tab=t.0)
-
