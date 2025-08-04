@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, Users, Leaf } from "lucide-react";
+import { Trophy, Users, Leaf, Home } from "lucide-react";
 import type {
   UserProfile,
   Friendship,
@@ -10,6 +10,7 @@ import { api } from "../lib/api";
 import { FriendManagement } from "../components/leaderboard/FriendManagement";
 import { LeaderboardTable } from "../components/leaderboard/LeaderboardTable";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 
 export function LeaderboardPage() {
   const [friends, setFriends] = useState<UserProfile[]>([]);
@@ -102,6 +103,14 @@ export function LeaderboardPage() {
               <Leaf className="w-5 h-5 text-green-400" />
               <span className="font-medium">Loading leaderboard...</span>
             </motion.div>
+            {/* Go to Home Button */}
+            <Link
+              to="/garden"
+              className="mt-4 inline-flex items-center px-4 py-2 bg-green-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors shadow"
+            >
+              <Home className="w-5 h-5 mr-2" />
+              Go to Home
+            </Link>
           </motion.div>
         </div>
       </div>
@@ -118,7 +127,7 @@ export function LeaderboardPage() {
           transition={{ duration: 0.8 }}
           className="mb-8"
         >
-          <div className="glass rounded-3xl p-8 text-center">
+          <div className="glass rounded-3xl p-8 text-center relative">
             <motion.div
               initial={{ scale: 0, rotate: -180 }}
               animate={{ scale: 1, rotate: 0 }}
@@ -145,6 +154,16 @@ export function LeaderboardPage() {
             >
               Compete with friends and grow your garden together!
             </motion.p>
+            {/* Go to Home Button */}
+            <div className="flex justify-center mt-6">
+              <Link
+                to="/garden"
+                className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors shadow"
+              >
+                <Home className="w-5 h-5 mr-2" />
+                Go to Home
+              </Link>
+            </div>
           </div>
         </motion.div>
 

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { LogOut, Zap, Trophy, Loader2, Menu, Users } from "lucide-react";
+import { Link } from "react-router-dom";
 import type { UserProgressResponse } from "../../types";
 import { MobileMenu } from "./MobileMenu";
 import { AudioSettings } from "./AudioSettings";
@@ -109,9 +110,12 @@ export const GardenHeader: React.FC<GardenHeaderProps> = ({
             <div className="flex items-center gap-2 flex-shrink-0">
               {/* Leaderboard */}
               <div className="bg-white/10 backdrop-blur-sm border border-purple-400/30 rounded-lg text-center flex flex-col justify-center p-3.5">
-                <a href="/leaderboard" className="text-sm font-bold text-white">
+                <Link
+                  to="/leaderboard"
+                  className="text-sm font-bold text-white"
+                >
                   <Users className="size-4 text-purple-400 mx-auto hover:text-purple-300" />
-                </a>
+                </Link>
               </div>
 
               {/* Audio Settings */}
